@@ -67,3 +67,37 @@ Do not put multi-framework switching, multi-agent orchestration, semantic respon
 - [MAF Agent Harness](https://learn.microsoft.com/agent-framework/concepts/harness)
 - [MAF getting started](https://learn.microsoft.com/agent-framework/get-started/)
 - [Microsoft Foundry samples](https://github.com/microsoft-foundry/foundry-samples)
+
+## Future Copilot Agent Expansion (v2/v3)
+
+Copilot agents should be an explicit future product track, but they should not be presented as one interchangeable runtime. Microsoft 365 Copilot agents, Copilot Studio agents, and GitHub Copilot agents have different hosts, identity models, lifecycle controls, tool surfaces, and deployment contracts. Version 1.0 therefore remains the MAF Harness and Foundry reference implementation while the shared core preserves the policy and adapter boundaries needed for later integration.
+
+### Candidate Surfaces
+
+| Surface | Potential harness role | Initial disposition |
+|---|---|---|
+| Microsoft 365 Copilot agents | Make governed business agents available in Microsoft 365 and use Microsoft 365 knowledge, actions, and user context | Primary v2 discovery and prototype target |
+| Microsoft 365 Agents SDK | Provide a pro-code host or channel adapter for Microsoft 365 and other supported channels | Evaluate in v2 against the runtime and channel contracts |
+| Copilot Studio agents | Integrate low-code agents or workflows where platform-native governance and lifecycle remain authoritative | Integration pattern only; do not wrap or replace Copilot Studio orchestration |
+| GitHub Copilot agents | Apply selected harness governance and evaluation assets to software-development agents and repository workflows | Separate coding-agent track; evaluate only when a concrete field scenario exists |
+
+### Version 2: Discovery and Conformance Prototype
+
+- Select one Microsoft 365 Copilot use case and document why Copilot is the required user experience or data boundary.
+- Map channel activity, conversation state, user identity, tools, approvals, audit, telemetry, and evaluation to the existing harness ports.
+- Build a read-only or propose-only prototype before enabling consequential actions.
+- Prove tenant and user isolation, authorization at every downstream call, untrusted-content handling, bounded execution, and audit correlation.
+- Document capability gaps and decide whether the result is a runtime adapter, channel adapter, tool integration, or separate deployment profile. Do not assume configuration-only switching.
+
+### Version 3: Optional Productization
+
+Productize a Copilot adapter or profile only if the v2 prototype passes the shared conformance tests and field demand justifies maintaining it. A v3 implementation must preserve mandatory harness controls, define its own deployment and lifecycle contract, support Copilot-native approval and administration experiences where available, and produce evaluation evidence comparable to the v1 reference path. Platform-owned policy remains authoritative when it is stricter than harness policy.
+
+The expansion is complete only when identity scope, tool authorization, approval semantics, idempotency, normalized audit events, error behavior, telemetry privacy, and evaluation can be demonstrated end to end. Until then, Copilot support remains a roadmap item rather than a compatibility claim.
+
+References:
+
+- [Extend Microsoft 365 Copilot](https://learn.microsoft.com/microsoft-365-copilot/extensibility/overview)
+- [Microsoft 365 Agents SDK](https://learn.microsoft.com/microsoft-365/agents-sdk/)
+- [Architecting agent solutions for Microsoft 365 Copilot](https://learn.microsoft.com/agents/architecture/)
+- [About GitHub Copilot cloud agent](https://docs.github.com/copilot/concepts/agents/coding-agent/about-coding-agent)

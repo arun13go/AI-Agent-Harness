@@ -161,7 +161,10 @@ Update phase status only when its evidence changes. GitHub issues should referen
 - [CTX-07](pattern-catalog.md#ctx-07) hierarchical context implementation and [STATE-06](pattern-catalog.md#state-06) event-sourced reconstruction.
 - [CACHE-01](pattern-catalog.md#cache-01) exact-key model caching and [CACHE-04](pattern-catalog.md#cache-04) semantic response caching.
 - [POL-08](pattern-catalog.md#pol-08) dynamic model and tool routing.
-- Second runtime adapter and framework conformance report.
+- v2 Copilot discovery: select one Microsoft 365 Copilot scenario, classify the integration boundary, and complete identity, tool, state, approval, audit, telemetry, and evaluation gap analysis.
+- v2 Copilot prototype: implement one read-only or propose-only Microsoft 365 Copilot path and publish its conformance report.
+- v3 Copilot productization: add only adapters or deployment profiles that pass applicable shared contracts and have demonstrated field demand; keep GitHub Copilot coding agents as a separate scenario track.
+- Other second runtime adapters and framework conformance reports.
 - Multi-agent workflows and background agents.
 - AgentOps Accelerator export adapter.
 - Private networking modules beyond documented enterprise integration points.

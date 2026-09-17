@@ -136,6 +136,7 @@ A tagged release is expected to contain:
 - [Engineering review](docs/blueprint-review.md)
 - [Reference architecture](docs/reference-architecture.md)
 - [Implementation plan](docs/implementation-plan.md)
+- [Pattern catalogue](docs/pattern-catalog.md)
 - [ADR 0001: MAF reference runtime](docs/decisions/0001-maf-reference-runtime.md)
 - [ADR 0002: Cloud-first v1.0 development](docs/decisions/0002-cloud-first-v1-development.md)
 - [ADR 0003: Dual Azure deployment entry points](docs/decisions/0003-dual-azure-deployment-entry-points.md)

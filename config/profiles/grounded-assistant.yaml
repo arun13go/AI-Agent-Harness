@@ -1,0 +1,31 @@
+schemaVersion: 1
+profile: grounded-assistant
+runtime:
+  adapter: maf
+  maxSteps: 12
+  timeoutSeconds: 120
+model:
+  provider: foundry
+  deploymentNameEnv: AZURE_AI_MODEL_DEPLOYMENT_NAME
+context:
+  compaction: summarize
+  maxInputTokens: 64000
+retrieval:
+  enabled: true
+  adapter: azure-ai-search
+  strategy: hybrid
+  answerability:
+    enabled: true
+    onInsufficientEvidence: clarify
+memory:
+  adapter: in-memory
+  ttlDays: 30
+state:
+  adapter: in-memory
+governance:
+  maximumTier: read
+  approvalRequiredForAct: true
+  auditEnabled: true
+observability:
+  exporter: console
+  payloadCapture: false

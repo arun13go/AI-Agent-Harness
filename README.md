@@ -4,7 +4,9 @@ A cloneable code template for creating governed, observable and evaluable AI age
 
 Version 1.0 is cloud-first. The Agent Harness runs in the customer's Azure tenant, using the released Python Microsoft Agent Framework (MAF) Harness and Microsoft Foundry for models and evaluation. Replaceable concerns such as retrieval, context policy, memory, durable state, approvals and telemetry are exposed through typed contracts and validated configuration.
 
-> Status: architecture and implementation plan are defined. Runtime code and infrastructure are not yet scaffolded.
+> Status: Phase 0 foundations are complete. Versioned schemas, typed adapter contracts, pinned
+> tooling, and deterministic contract checks exist; runtime adapters and infrastructure begin in
+> Phase 1.
 
 ## Scope
 
@@ -141,6 +143,13 @@ A tagged release is expected to contain:
 - [ADR 0002: Cloud-first v1.0 development](docs/decisions/0002-cloud-first-v1-development.md)
 - [ADR 0003: Dual Azure deployment entry points](docs/decisions/0003-dual-azure-deployment-entry-points.md)
 - [ADR 0004: Copilot agent expansion](docs/decisions/0004-copilot-agent-expansion.md)
+- [ADR 0005: Cosmos DB run state](docs/decisions/0005-cosmos-db-reference-run-state.md)
+- [ADR 0006: Cosmos DB memory](docs/decisions/0006-cosmos-db-reference-memory.md)
+- [ADR 0007: Azure AI Search retrieval](docs/decisions/0007-azure-ai-search-reference-retrieval.md)
+- [ADR 0008: GPT-5.4 Mini reference model](docs/decisions/0008-gpt-5-4-mini-reference-model.md)
+- [Adapter conformance design](docs/adapter-conformance.md)
+- [Toolchain policy](docs/toolchain.md)
+- [Contributor setup](CONTRIBUTING.md)
 - [Source blueprint](docs/source-blueprint.md)
 - [Repository agent instructions](AGENTS.md)
 

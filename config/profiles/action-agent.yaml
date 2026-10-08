@@ -1,0 +1,31 @@
+schemaVersion: 1
+profile: action-agent
+runtime:
+  adapter: maf
+  maxSteps: 12
+  timeoutSeconds: 120
+model:
+  provider: foundry
+  deploymentNameEnv: AZURE_AI_MODEL_DEPLOYMENT_NAME
+context:
+  compaction: summarize
+  maxInputTokens: 64000
+retrieval:
+  enabled: false
+  adapter: none
+  strategy: none
+  answerability:
+    enabled: false
+    onInsufficientEvidence: clarify
+memory:
+  adapter: in-memory
+  ttlDays: 30
+state:
+  adapter: in-memory
+governance:
+  maximumTier: act
+  approvalRequiredForAct: true
+  auditEnabled: true
+observability:
+  exporter: console
+  payloadCapture: false

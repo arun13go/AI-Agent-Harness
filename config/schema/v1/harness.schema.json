@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-harness.example/schemas/v1/harness.schema.json",
+  "title": "Agent Harness Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profile",
+    "runtime",
+    "model",
+    "context",
+    "retrieval",
+    "memory",
+    "state",
+    "governance",
+    "observability"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "enum": ["assistant", "grounded-assistant", "action-agent"]
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "maxSteps", "timeoutSeconds"],
+      "properties": {
+        "adapter": {
+          "const": "maf"
+        },
+        "maxSteps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 900
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "deploymentNameEnv"],
+      "properties": {
+        "provider": {
+          "const": "foundry"
+        },
+        "deploymentNameEnv": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "default": "AZURE_AI_MODEL_DEPLOYMENT_NAME"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["compaction", "maxInputTokens"],
+      "properties": {
+        "compaction": {
+          "enum": ["truncate-oldest", "summarize"]
+        },
+        "maxInputTokens": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1048576
+        }
+      }
+    },
+    "retrieval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "adapter", "strategy", "answerability"],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "adapter": {
+          "enum": ["none", "azure-ai-search"]
+        },
+        "strategy": {
+          "enum": ["none", "keyword", "vector", "hybrid"]
+        },
+        "answerability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "onInsufficientEvidence"],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "onInsufficientEvidence": {
+              "enum": ["clarify", "caveat", "abstain", "escalate"]
+            }
+          }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter", "ttlDays"],
+      "properties": {
+        "adapter": {
+          "enum": ["in-memory", "cosmos-db"]
+        },
+        "ttlDays": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["adapter"],
+      "properties": {
+        "adapter": {
+          "enum": ["in-memory", "cosmos-db"]
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maximumTier", "approvalRequiredForAct", "auditEnabled"],
+      "properties": {
+        "maximumTier": {
+          "enum": ["read", "propose", "act"]
+        },
+        "approvalRequiredForAct": {
+          "const": true
+        },
+        "auditEnabled": {
+          "const": true
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exporter", "payloadCapture"],
+      "properties": {
+        "exporter": {
+          "enum": ["console", "application-insights"]
+        },
+        "payloadCapture": {
+          "const": false
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "grounded-assistant"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "enabled": {
+                "const": true
+              },
+              "adapter": {
+                "const": "azure-ai-search"
+              },
+              "strategy": {
+                "enum": ["keyword", "vector", "hybrid"]
+              },
+              "answerability": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "enabled": {
+                "const": false
+              }
+            },
+            "required": ["enabled"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "adapter": {
+                "const": "none"
+              },
+              "strategy": {
+                "const": "none"
+              },
+              "answerability": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

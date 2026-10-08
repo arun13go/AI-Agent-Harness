@@ -23,7 +23,7 @@ Update phase status only when its evidence changes. GitHub issues should referen
 
 | Phase | Deliverable | Status |
 |---|---|---|
-| 0 | Tooling, decisions, and scope | In progress |
+| 0 | Tooling, decisions, and scope | Complete |
 | 1 | Contracts, policy core, and cloud walking skeleton | Not started |
 | 2 | Grounding and context profile | Not started |
 | 3 | Durable Azure reference adapters | Not started |
@@ -50,6 +50,25 @@ Update phase status only when its evidence changes. GitHub issues should referen
 **Artifacts:** dependency manifest and lock, tool-version policy, schemas, conformance-test design, remaining ADRs, and contributor setup instructions.
 
 **Exit:** Foundry dependency setup passes, schemas review cleanly, the architecture has no unresolved critical decision, and a clean machine can install the pinned development toolchain.
+
+### Completion Evidence
+
+Completed 8 October 2026:
+
+- Python 3.12, uv 0.11.15, released MAF Core 1.19.0, Foundry adapter 1.13.1, and
+  development dependencies are pinned in `pyproject.toml` and `uv.lock`.
+- `uv sync --frozen` created a clean Python 3.12.13 environment from the lock.
+- The Foundry dependency setup check passed with azd 1.34.2 and
+  `microsoft.foundry` 1.0.0-beta.2.
+- The live Foundry catalog verified the reference `gpt-5.4-mini` model version
+  `2026-03-17`; ADR 0008 requires deployment-time region, lifecycle, capability, and quota
+  validation.
+- ADRs 0005-0007 resolve reference state, memory, and retrieval choices.
+- Three example profiles and both versioned JSON Schemas pass 14 deterministic schema and
+  contract-surface tests.
+- Strict Pyright, Ruff, and `uv lock --check` pass.
+- Shared adapter semantics and future conformance suites are defined in
+  `docs/adapter-conformance.md`.
 
 ## Phase 1: Cloud Walking Skeleton
 
@@ -186,6 +205,8 @@ Update phase status only when its evidence changes. GitHub issues should referen
 | 10 | Harden dual deployment and CI | 5 | [SEC-01](pattern-catalog.md#sec-01), [SEC-05](pattern-catalog.md#sec-05), [SEC-07](pattern-catalog.md#sec-07) | Clean deployment comparison |
 | 11 | Run pilots and publish v1.0 | 6 | [All v1.0 patterns](pattern-catalog.md) | Pilot and release reports |
 
-## Known Tooling Prerequisite
+## Tooling Baseline
 
-The local Microsoft Foundry dependency check currently fails because Azure Developer CLI `1.23.7` cannot install the required `microsoft.foundry` extension. Upgrade azd to the current supported release (reported by the setup check as `1.34.1`) before scaffolding or deployment work, then rerun the Foundry dependency setup script.
+The previous azd extension blocker is resolved. The supported Phase 0 baseline and upgrade policy
+are recorded in [the toolchain policy](toolchain.md). Phase 1 must convert those requirements into
+an executable environment preflight before deployment.

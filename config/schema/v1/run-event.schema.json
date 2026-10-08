@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-harness.example/schemas/v1/run-event.schema.json",
+  "title": "Normalized Agent Harness Run Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventType",
+    "occurredAt",
+    "sequence",
+    "tenantScope",
+    "subjectScope",
+    "runId",
+    "correlationId",
+    "traceId",
+    "source",
+    "outcome",
+    "attributes"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "eventId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "eventType": {
+      "enum": [
+        "run.started",
+        "run.completed",
+        "run.failed",
+        "model.requested",
+        "model.completed",
+        "model.failed",
+        "retrieval.completed",
+        "tool.proposed",
+        "tool.started",
+        "tool.completed",
+        "tool.failed",
+        "approval.requested",
+        "approval.decided",
+        "checkpoint.created",
+        "run.resumed"
+      ]
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "tenantScope": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "subjectScope": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "runId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "correlationId": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "traceId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "spanId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "source": {
+      "enum": ["app", "maf-runtime", "model", "retrieval", "tool", "approval", "state"]
+    },
+    "outcome": {
+      "enum": ["started", "succeeded", "failed", "cancelled", "pending-approval", "denied"]
+    },
+    "attributes": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "pattern": "(?i)(prompt|message|content|document|toolresult|tool_result|body|secret|token)"
+        }
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/attributeValue"
+      }
+    }
+  },
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "attributeValue": {
+      "oneOf": [
+        {
+          "type": ["string", "number", "integer", "boolean", "null"]
+        },
+        {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": ["string", "number", "integer", "boolean", "null"]
+          }
+        }
+      ]
+    }
+  }
+}

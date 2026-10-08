@@ -12,6 +12,8 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+dist/
+*.egg-info/
 
 # Editor and operating-system files
 .vscode/settings.json

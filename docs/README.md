@@ -38,8 +38,8 @@ Read this path only when changing scope, ownership, or cross-cutting semantics:
 3. [Pattern catalogue](delivery/pattern-catalog.md) for detailed capability semantics
 4. [Implementation plan](delivery/implementation-plan.md) for sequencing impact
 
-The files under [historical/](historical/) explain how the current decisions were reached. They are
-not current requirements.
+The superseded review under [historical/](historical/) explains how the current decisions were
+reached. It is not a current requirement.
 
 ## Authoritative source by subject
 
@@ -77,7 +77,7 @@ Other documents should link to these sources instead of copying their content.
     |-- decisions/                    # Accepted ADRs
     |-- delivery/                     # Roadmap, status, and pattern catalogue
     |-- getting-started/              # Toolchain policy
-    `-- historical/                   # Original proposal and review provenance
+    `-- historical/                   # Superseded design-review provenance
 ```
 
 Runtime adapter, application, evaluation, and infrastructure folders are added during Phase 1 only

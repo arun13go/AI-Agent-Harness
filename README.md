@@ -109,3 +109,7 @@ the shared contracts rather than claiming configuration-only compatibility.
 
 For scope details and authoritative architecture rules, use the
 [documentation index](docs/README.md).
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

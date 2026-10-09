@@ -12,12 +12,6 @@ for deterministic schema, contract, policy, lint, or type-check validation.
 uv sync --frozen
 ```
 
-If your network uses the Microsoft package feed proxy configured for this environment:
-
-```powershell
-uv sync --frozen --index "https://pypi.org/simple/"
-```
-
 Do not activate the virtual environment manually. Prefix repository commands with `uv run`.
 
 ## Validate changes

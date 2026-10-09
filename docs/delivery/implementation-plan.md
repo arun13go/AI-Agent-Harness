@@ -1,5 +1,9 @@
 # Implementation Plan
 
+> **Audience:** contributors and maintainers  
+> **Status:** current and authoritative  
+> **Purpose:** delivery sequence, phase status, artifacts, and completion evidence
+
 ## Purpose
 
 This is the canonical delivery roadmap for implementing the Agent Harness. The [pattern catalogue](pattern-catalog.md) defines capability semantics and alternatives; this plan controls sequencing, scope, status, artifacts, and completion evidence.
@@ -67,8 +71,8 @@ Completed 8 October 2026:
 - Three example profiles and both versioned JSON Schemas pass 14 deterministic schema and
   contract-surface tests.
 - Strict Pyright, Ruff, and `uv lock --check` pass.
-- Shared adapter semantics and future conformance suites are defined in
-  `docs/adapter-conformance.md`.
+- Shared adapter semantics and future conformance suites are defined in the
+  [adapter contract and conformance design](../architecture/adapter-contracts.md).
 
 ## Phase 1: Cloud Walking Skeleton
 
@@ -208,5 +212,5 @@ Completed 8 October 2026:
 ## Tooling Baseline
 
 The previous azd extension blocker is resolved. The supported Phase 0 baseline and upgrade policy
-are recorded in [the toolchain policy](toolchain.md). Phase 1 must convert those requirements into
-an executable environment preflight before deployment.
+are recorded in [the toolchain policy](../getting-started/toolchain.md). Phase 1 must convert those
+requirements into an executable environment preflight before deployment.

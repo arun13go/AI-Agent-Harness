@@ -1,174 +1,111 @@
 # AI Agent Harness
 
-A cloneable code template for creating governed, observable and evaluable AI agents on Azure. Users configure the template, replace the sample tools and domain instructions, run the Agent Harness including companion Evaluation, and deploy it into their own Azure tenant.
+A reusable template for building governed, observable, and evaluable AI agents in a customer's
+Azure tenant. It composes Microsoft Agent Framework (MAF) Harness for execution and Microsoft
+Foundry for models, evaluation, and tracing instead of creating another agent runtime.
 
-Version 1.0 is cloud-first. The Agent Harness runs in the customer's Azure tenant, using the released Python Microsoft Agent Framework (MAF) Harness and Microsoft Foundry for models and evaluation. Replaceable concerns such as retrieval, context policy, memory, durable state, approvals and telemetry are exposed through typed contracts and validated configuration.
+> **Current status:** Phase 0 is complete. Tooling, versioned schemas, typed adapter contracts, and
+> deterministic checks are ready. The runnable agent and Azure infrastructure begin in Phase 1.
 
-> Status: Phase 0 foundations are complete. Versioned schemas, typed adapter contracts, pinned
-> tooling, and deterministic contract checks exist; runtime adapters and infrastructure begin in
-> Phase 1.
-
-## Scope
-
-This repository is focused only on producing reusable implementation for the Agent Harness code template.
-
-### In Scope
-
-- A runnable MAF-based Agent Harness reference implementation.
-- 3 type of profiles: Assistant, grounded-assistant and action-agent configuration profiles.
-- Typed extension contracts for model clients, retrieval and chunking, context policy, memory, durable state, approvals, tools, audit and telemetry.
-- Configurable caching for model prompts, immutable retrieval artifacts and safe tool results, with scoped keys, TTL, invalidation, telemetry and cost metrics.
-- Mandatory governance controls for bounded execution, tool allow-listing, identity scope, approvals, idempotency and append-only audit events.
-- A companion Evaluation Harness with versioned datasets, deterministic and Foundry evaluators, baseline comparison and release thresholds.
-- Lightweight local test adapters and Azure reference adapters.
-- Automated unit, policy, contract, integration, evaluation and deployment smoke tests.
-- Repeatable Azure deployment through both `azd up` and a one-click **Deploy to Azure** button, backed by the same Bicep and passwordless identity.
-- Technical documentation required to clone, configure, extend, test, deploy and operate the template.
-
-### Out of Scope
-
-- A new evaluation or observability platform; the template integrates released Foundry and Azure Monitor capabilities.
-- Experimental multi-agent orchestration and AgentOps integration on the v1.0 critical path (backlog). Semantic response caching is supported through the cache-policy contract.
-
-## Design Principles
-
-- Compose released MAF Harness capabilities instead of reimplementing the agent loop.
-- Keep policy separate from mechanism: configuration selects registered implementations and thresholds but cannot bypass mandatory controls.
-- Treat retrieved content and tool output as untrusted data.
-- Scope state, memory and cached artifacts by tenant and user.
-- Keep business payloads out of telemetry by default.
-- Add another framework only through an adapter that passes the shared conformance tests.
-
-## Architecture
+## Understand it in two minutes
 
 ```mermaid
 flowchart LR
-    CLIENT[Client] --> APP[API or worker]
-    APP --> MAF[MAF Harness]
-    MAF --> PORTS[Policy and adapter ports]
-    PORTS --> FOUNDRY[Microsoft Foundry]
-    PORTS --> DATA[Retrieval, memory and state]
-    PORTS --> CACHE[Cache policy and store]
-    PORTS --> TOOLS[Tools and MCP]
-    PORTS --> HITL[Approval channel]
-    MAF --> OTEL[Application Insights]
-    EVAL[Evaluation Harness] --> APP
-    EVAL --> FEVAL[Foundry evaluation]
+    CLIENT[Client] --> HARNESS[Governed MAF Harness]
+    HARNESS --> MODEL[Foundry model]
+    HARNESS --> TOOLS[Typed tools]
+    HARNESS --> DATA[Retrieval, memory, state]
+    HARNESS --> CONTROL[Approval and audit]
+    HARNESS --> OBS[Telemetry and evaluation]
 ```
 
-See [docs/reference-architecture.md](docs/reference-architecture.md) for runtime flow, extension ports, deployment topologies, and mandatory controls.
+The harness keeps customer-editable configuration separate from mandatory controls. Configuration
+may select registered models, tools, and adapters, but cannot disable identity scope, tool
+validation, act-tier approval, idempotency, audit correlation, telemetry privacy, or execution
+ceilings.
 
-The Evaluation Harness is a companion test and monitoring layer. It invokes the same supported application entry point used in production; it does not run inside every live request.
+## What works today
 
-## v1.0 Profiles
+- A pinned Python 3.12 and `uv` development environment.
+- Versioned schemas for harness configuration and normalized run events.
+- Assistant, grounded-assistant, and action-agent example profiles.
+- Framework-neutral contracts for model, retrieval, context, memory, state, approval, tools, audit,
+  and telemetry.
+- Architecture decisions for MAF, Foundry, Cosmos DB, Azure AI Search, deployment, and the reference
+  model.
+- Deterministic schema and contract checks that require no Azure connection.
 
-A profile is a validated configuration preset for a common agent use case. Customers select the profile that most closely matches the agent they want to build, then configure its model, tools, data sources and policy limits. Profiles use the same MAF Harness runtime and mandatory governance controls; they are not separate frameworks or applications.
+There is not yet a runnable agent or deployable Azure environment. Those are Phase 1 deliverables.
 
-| Select this profile | When the agent needs to | Controls added by the profile |
-|---|---|---|
-| Assistant | Answer questions and perform bounded tasks with approved tools | Typed tools, context budget, audit and telemetry |
-| Grounded assistant | Produce evidence-based answers from customer data | Retrieval, citations, source freshness and an answerability gate |
-| Action agent | Propose or execute changes in an external system | Durable checkpoints, human approval and idempotency protection |
+## Quick start
 
-To implement an agent from the template:
+Prerequisites: Git and [`uv` 0.11.15](https://docs.astral.sh/uv/).
 
-1. Select one profile as the starting configuration.
-2. Register the customer's approved model, tools, data sources and storage adapters.
-3. Configure profile limits and policies without disabling mandatory controls.
-4. Run the profile's contract and evaluation tests before deployment.
+```powershell
+git clone https://github.com/arun13go/AI-Agent-Harness.git
+Set-Location "AI-Agent-Harness"
+uv sync --frozen
+uv run pytest
+uv run pyright
+uv run ruff check .
+```
 
-A customer can deploy more than one agent (profile) from the template. Each deployed agent has its own profile and tenant-scoped configuration; for example, a grounded support assistant and a separate approval-gated action agent.
+Expected result: the test suite passes, type checking reports no errors, and linting succeeds.
+Azure access is not required for these checks.
 
-## Development Environments
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the supported workflow and dependency-update policy.
 
-| Environment | What runs there |
+## Profiles
+
+| Profile | Use it when |
 |---|---|
-| Azure Dev | Agent Harness/API, Foundry model inference and evaluation, Application Insights, retrieval, persistent state, cache and deployed tools |
-| Local | Source editing, unit/schema/policy tests, in-memory adapters and optional debugging against Azure Dev |
+| Assistant | The model can complete a bounded task from supplied content, general reasoning, or approved tools |
+| Grounded assistant | Answers must come from current authorized evidence with citations and an answerability check |
+| Action agent | The agent may propose or perform consequential actions with checkpoints, approval, and idempotency |
 
-Azure Dev is the supported daily development and integration environment, deployed with `azd up` or the **Deploy to Azure** button. Local execution is a fast test path, not the reference hosting topology, and does not host model inference.
+Examples live under [`config/profiles/`](config/profiles/).
 
-### Environment Requirements
+## Repository map
 
-These requirements are provisional and will be pinned as the template is implemented:
+| Path | Purpose |
+|---|---|
+| [`src/agent_harness/core/`](src/agent_harness/core/) | Framework-neutral types and adapter contracts |
+| [`config/`](config/) | Versioned schemas and safe example profiles |
+| [`tests/`](tests/) | Deterministic schema and contract checks |
+| [`docs/`](docs/) | Human documentation, decisions, delivery plan, and historical context |
+| [`AGENTS.md`](AGENTS.md) | Always-on instructions for AI coding agents, not human onboarding |
 
-- An Azure subscription and permission to create resource groups, deploy resources and assign required RBAC roles.
-- A Microsoft Entra user identity; committed secrets and shared credentials are not supported.
-- Access to a supported Azure region with sufficient Microsoft Foundry model quota and capacity.
-- Required Azure resource providers registered in the target subscription.
-- Visual Studio Code with the Python, Bicep and Foundry Toolkit extensions.
-- For `azd up`: Git, a supported Python version, the current supported Azure Developer CLI and required azd extensions.
-- For **Deploy to Azure**: access to the Azure portal and permission to deploy the generated ARM template.
-- For local tests: Git, Python and the repository's package manager; Azure access is not required for deterministic tests.
-- Network access to Microsoft Foundry, Azure management and any configured data or tool endpoints.
+Folders for runtime adapters, application entry points, evaluations, and infrastructure are created
+only when their first working Phase 1 artifacts are added.
 
-## Planned Repository Layout
+## Where to go next
+
+- **New to the repository:** follow the [documentation reading paths](docs/README.md).
+- **Preparing a contribution:** read [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Understanding the design:** read the
+  [reference architecture](docs/architecture/overview.md).
+- **Checking current and next work:** read the
+  [implementation plan](docs/delivery/implementation-plan.md).
+- **Reviewing decisions:** browse the [ADRs](docs/decisions/).
+
+The next executable milestone is:
 
 ```text
-src/
-  core/                 # Policy models, ports, events
-  adapters/
-    maf/                # Reference runtime adapter
-    foundry/            # Model, hosting, eval and tracing
-    storage/            # Memory, state, artifact and audit stores
-  app/                  # API/worker and composition root
-config/                 # Versioned schemas and profiles
-evals/                  # Datasets, evaluators and thresholds
-infra/                  # azure.yaml and Bicep
-tests/                  # Unit, contract, policy and smoke tests
-docs/                   # Architecture, ADRs, plans and runbooks
+validated profile
+  -> identity and run context
+  -> MAF composition
+  -> typed read tool
+  -> normalized events
+  -> in-memory audit
+  -> deterministic policy tests
 ```
 
-Folders will be created with their first working artifact rather than as empty scaffolding.
+## Product boundary
 
-## Template Deliverables
+Version 1.0 is cloud-first and Python-based. Azure Dev is the reference integration environment.
+Local development supports editing and deterministic tests; it does not host model inference.
+Foundry-specific behavior stays behind explicit adapters, and another runtime or provider must pass
+the shared contracts rather than claiming configuration-only compatibility.
 
-A tagged release is expected to contain:
-
-1. Cloud-hosted Agent Harness in the user's Azure tenant, using a Foundry model deployment and sample read and approval-gated action tools.
-2. Companion Evaluation Harness with seed smoke and regression datasets.
-3. Validated configuration schemas and environment-safe example profiles.
-4. In-memory development adapters and Azure reference adapters.
-5. Policy, adapter-conformance, evaluation and deployment tests.
-6. `azure.yaml`, modular Bicep and a **Deploy to Azure** button for equivalent CLI and one-click deployment paths.
-7. Quickstart, extension, security, operations and troubleshooting documentation.
-
-## Documentation
-
-- [Engineering review](docs/blueprint-review.md)
-- [Reference architecture](docs/reference-architecture.md)
-- [Implementation plan](docs/implementation-plan.md)
-- [Pattern catalogue](docs/pattern-catalog.md)
-- [ADR 0001: MAF reference runtime](docs/decisions/0001-maf-reference-runtime.md)
-- [ADR 0002: Cloud-first v1.0 development](docs/decisions/0002-cloud-first-v1-development.md)
-- [ADR 0003: Dual Azure deployment entry points](docs/decisions/0003-dual-azure-deployment-entry-points.md)
-- [ADR 0004: Copilot agent expansion](docs/decisions/0004-copilot-agent-expansion.md)
-- [ADR 0005: Cosmos DB run state](docs/decisions/0005-cosmos-db-reference-run-state.md)
-- [ADR 0006: Cosmos DB memory](docs/decisions/0006-cosmos-db-reference-memory.md)
-- [ADR 0007: Azure AI Search retrieval](docs/decisions/0007-azure-ai-search-reference-retrieval.md)
-- [ADR 0008: GPT-5.4 Mini reference model](docs/decisions/0008-gpt-5-4-mini-reference-model.md)
-- [Adapter conformance design](docs/adapter-conformance.md)
-- [Toolchain policy](docs/toolchain.md)
-- [Contributor setup](CONTRIBUTING.md)
-- [Source blueprint](docs/source-blueprint.md)
-- [Repository agent instructions](AGENTS.md)
-
-## Delivery Path
-
-1. Define the configuration, event, and adapter contracts.
-2. Deploy a cloud-hosted MAF Harness walking skeleton to Azure Dev.
-3. Add grounded retrieval, context controls, and answerability routing.
-4. Add Foundry and Azure persistence adapters.
-5. Add dual service-health and outcome-quality monitoring.
-6. Add Foundry evaluation gates and red-team evidence.
-7. Validate `azd up` and **Deploy to Azure** against the same Bicep, parameters, RBAC, outputs and smoke tests.
-8. Publish a versioned template release with clean-clone validation evidence.
-
-Version 1.0 supports two Azure deployment entry points: `azd up` for developers and **Deploy to Azure** for portal-based one-click deployment. Both deploy the same Bicep and must produce equivalent resources, RBAC, outputs and post-deployment validation.
-
-
-## Source References
-
-- [MAF Agent Harness](https://learn.microsoft.com/agent-framework/concepts/harness)
-- [MAF getting started](https://learn.microsoft.com/agent-framework/get-started/)
-- [Microsoft Foundry samples](https://github.com/microsoft-foundry/foundry-samples)
+For scope details and authoritative architecture rules, use the
+[documentation index](docs/README.md).

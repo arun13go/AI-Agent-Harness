@@ -17,11 +17,11 @@ Build a reusable, production-oriented agent harness template that customers can 
 
 ## Repository Shape
 
-- `src/core/`: framework-neutral contracts, policy models, domain events, and conformance tests.
-- `src/adapters/maf/`: MAF Harness composition and MAF-specific providers or middleware.
-- `src/adapters/foundry/`: Foundry model, hosted-agent, evaluation, and tracing integration.
-- `src/adapters/storage/`: memory, checkpoint, artifact, and audit persistence implementations.
-- `src/app/`: API or worker entry points and dependency composition.
+- `src/agent_harness/core/`: framework-neutral contracts, policy models, and domain events.
+- `src/agent_harness/adapters/maf/`: MAF Harness composition and MAF-specific middleware.
+- `src/agent_harness/adapters/foundry/`: Foundry model, evaluation, and tracing integration.
+- `src/agent_harness/adapters/storage/`: memory, state, artifact, and audit implementations.
+- `src/agent_harness/app/`: API or worker entry points and dependency composition.
 - `config/`: versioned schemas and environment-safe example configuration.
 - `evals/`: seed datasets, evaluator configuration, thresholds, and regression fixtures.
 - `infra/`: azd and Bicep assets, including role assignments and observability resources.
@@ -32,7 +32,9 @@ Create folders only when the first real artifact for that boundary is added. Avo
 
 ## Delivery Workflow
 
-1. Read `README.md`, `docs/blueprint-review.md`, `docs/reference-architecture.md`, and `docs/implementation-plan.md` before changing architecture or scope.
+1. Read `README.md`, `docs/README.md`, `docs/architecture/overview.md`, and
+   `docs/delivery/implementation-plan.md` before changing architecture or scope. Historical
+   documents are provenance, not current requirements.
 2. State one local hypothesis and one check that can falsify it before the first edit.
 3. Prefer a thin vertical slice over broad scaffolding. The first slice must deploy to Azure Dev through `azd up` and **Deploy to Azure**; deterministic policy and contract tests must run locally without Azure.
 4. After the first substantive edit, run the narrowest relevant test, type check, schema validation, or link check before making further edits.

@@ -1,5 +1,9 @@
 # Agent Harness Pattern Catalogue
 
+> **Audience:** architects and contributors implementing a planned capability  
+> **Status:** current reference; not required for initial onboarding  
+> **Purpose:** detailed capability semantics and stable pattern identifiers
+
 ## Purpose
 
 This catalogue defines the implementation patterns supported or anticipated by the Agent Harness. It complements the [implementation plan](implementation-plan.md): the plan controls delivery order, while this document defines where each capability belongs, which semantics are mandatory, and which implementation is selected for v1.0.
@@ -22,17 +26,17 @@ The **Reference** column links to first-party Microsoft documentation describing
 
 | Area | Patterns | Planned code boundary |
 |---|---|---|
-| Runtime | MAF execution, cancellation, streaming, bounded runs | `src/adapters/maf/` |
-| Memory | Working, conversation, episodic, semantic, preference, procedural | `src/core/contracts/memory.py`, `src/adapters/storage/memory/` |
-| State | Session, durable run, checkpoint/resume, idempotency, artifacts | `src/core/contracts/state.py`, `src/adapters/storage/state/` |
-| Context | Budgeting, source labeling, compaction, result handles | `src/core/context/`, `src/adapters/maf/context/` |
-| Retrieval | Keyword, vector, hybrid, semantic ranking, chunking | `src/core/contracts/retrieval.py`, `src/adapters/retrieval/` |
-| Security | Identity, authorization, tenant isolation, data protection | `src/core/security/` |
-| Policy | Execution limits, tool tiers, approval, answerability, retention | `src/core/governance/` |
-| Tools | Read, propose, act, function tools, MCP tools | `src/core/contracts/tools.py`, `src/adapters/tools/` |
-| Cache | Exact-key, retrieval artifact, safe tool-result, semantic response | `src/core/contracts/cache.py`, `src/adapters/storage/cache/` |
-| Evaluation | Outcome, grounding, answerability, tools, safety, latency, cost | `evals/`, `src/adapters/foundry/evaluation/` |
-| Observability | Traces, metrics, audit events, operational and quality health | `src/core/events/`, `src/adapters/telemetry/` |
+| Runtime | MAF execution, cancellation, streaming, bounded runs | `src/agent_harness/adapters/maf/` |
+| Memory | Working, conversation, episodic, semantic, preference, procedural | `src/agent_harness/core/`, `src/agent_harness/adapters/storage/memory/` |
+| State | Session, durable run, checkpoint/resume, idempotency, artifacts | `src/agent_harness/core/`, `src/agent_harness/adapters/storage/state/` |
+| Context | Budgeting, source labeling, compaction, result handles | `src/agent_harness/core/`, `src/agent_harness/adapters/maf/context/` |
+| Retrieval | Keyword, vector, hybrid, semantic ranking, chunking | `src/agent_harness/core/`, `src/agent_harness/adapters/retrieval/` |
+| Security | Identity, authorization, tenant isolation, data protection | `src/agent_harness/core/security/` |
+| Policy | Execution limits, tool tiers, approval, answerability, retention | `src/agent_harness/core/governance/` |
+| Tools | Read, propose, act, function tools, MCP tools | `src/agent_harness/core/`, `src/agent_harness/adapters/tools/` |
+| Cache | Exact-key, retrieval artifact, safe tool-result, semantic response | `src/agent_harness/core/`, `src/agent_harness/adapters/storage/cache/` |
+| Evaluation | Outcome, grounding, answerability, tools, safety, latency, cost | `evals/`, `src/agent_harness/adapters/foundry/evaluation/` |
+| Observability | Traces, metrics, audit events, operational and quality health | `src/agent_harness/core/`, `src/agent_harness/adapters/telemetry/` |
 
 ## Memory Patterns
 
@@ -181,33 +185,11 @@ Operational health and agent-quality health remain separate scorecards linked by
 
 ## Configuration and Registration
 
-Profiles select registered implementations and thresholds; they cannot import arbitrary code or disable mandatory controls.
-
-```yaml
-schemaVersion: 1
-profile: grounded-assistant
-memory:
-  working:
-    adapter: in-memory
-  conversation:
-    adapter: cosmos-session
-    ttlHours: 24
-  episodic:
-    adapter: azure-ai-search
-    writePolicy: significant-events
-state:
-  adapter: cosmos-run-state
-context:
-  budgetPolicy: bounded
-  compaction: structured-summary
-retrieval:
-  adapter: azure-ai-search
-  strategy: hybrid
-answerability:
-  onInsufficientEvidence: clarify
-governance:
-  maximumTier: propose
-```
+Profiles select registered implementations and thresholds; they cannot import arbitrary code or
+disable mandatory controls. The exact configuration contract is the versioned
+[JSON Schema](../../config/schema/v1/harness.schema.json). Use the checked-in
+[profiles](../../config/profiles/) as canonical examples rather than copying a second profile shape
+into design documentation.
 
 The composition root maps each adapter name to an installed implementation. Schema validation rejects unknown adapters, incompatible combinations, missing mandatory controls, and unsafe limits before the runtime starts.
 

@@ -2,8 +2,9 @@
 
 ## Prerequisites
 
-Install the supported tools in [docs/toolchain.md](docs/toolchain.md). Azure access is not
-required for deterministic schema, contract, policy, lint, or type-check validation.
+Install the supported tools in
+[docs/getting-started/toolchain.md](docs/getting-started/toolchain.md). Azure access is not required
+for deterministic schema, contract, policy, lint, or type-check validation.
 
 ## Set up a clean clone
 

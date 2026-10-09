@@ -1,5 +1,9 @@
 # Adapter Contract and Conformance Design
 
+> **Audience:** adapter implementers and reviewers  
+> **Status:** current and authoritative  
+> **Purpose:** behavioral requirements shared by in-memory, Azure, and future adapters
+
 ## Purpose
 
 Typed protocols define the callable shape of replaceable components. Shared conformance suites

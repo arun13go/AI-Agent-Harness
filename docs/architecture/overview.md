@@ -1,5 +1,9 @@
 # Reference Architecture
 
+> **Audience:** developers and architects  
+> **Status:** current and authoritative  
+> **Purpose:** runtime boundaries, extension ports, deployment topologies, and mandatory controls
+
 ## Design Intent
 
 The repository is a governed application template, not a new agent framework. It uses MAF Harness as the first runtime and keeps customer-changeable concerns behind typed ports. Foundry is the reference Azure platform for models, hosted execution, evaluation, and tracing.
@@ -73,36 +77,12 @@ Framework portability means a second runtime adapter can satisfy these semantics
 
 ## Configuration Model
 
-Use versioned YAML validated by JSON Schema. Configuration selects only implementations registered by code.
-
-```yaml
-schemaVersion: 1
-profile: grounded-assistant
-runtime:
-  adapter: maf
-  maxSteps: 12
-  timeoutSeconds: 120
-model:
-  provider: foundry
-context:
-  compaction: summarize
-  maxInputTokens: 64000
-retrieval:
-  adapter: azure-ai-search
-  chunking: structure-aware
-answerability:
-  enabled: true
-  onInsufficientEvidence: clarify
-memory:
-  adapter: in-memory
-  ttlDays: 30
-state:
-  adapter: in-memory
-governance:
-  maximumTier: propose
-observability:
-  exporter: application-insights
-```
+Use versioned YAML validated by the
+[configuration JSON Schema](../../config/schema/v1/harness.schema.json). Configuration selects only
+implementations registered by code. The checked-in
+[assistant](../../config/profiles/assistant.yaml),
+[grounded-assistant](../../config/profiles/grounded-assistant.yaml), and
+[action-agent](../../config/profiles/action-agent.yaml) profiles are the canonical examples.
 
 Secrets, endpoints resolved by azd, and tenant-specific IDs do not belong in committed configuration.
 

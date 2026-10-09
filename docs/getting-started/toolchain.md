@@ -1,5 +1,9 @@
 # Toolchain Policy
 
+> **Audience:** contributors and build maintainers  
+> **Status:** current and authoritative  
+> **Purpose:** supported tool versions, dependency stability, and upgrade policy
+
 ## Supported baseline
 
 | Tool | Supported version | Enforcement |

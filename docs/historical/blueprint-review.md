@@ -1,5 +1,10 @@
 # Blueprint Engineering Review
 
+> **Audience:** architecture reviewers  
+> **Status:** historical; retained for decision provenance  
+> **Superseded by:** [current architecture](../architecture/overview.md) and
+> [accepted ADRs](../decisions/)
+
 **Reviewed:** 13 September 2026  
 **Source:** [Production Agent Harness Blueprint](source-blueprint.md)  
 **Recommendation:** Proceed with one v1.0 reference runtime, a cloud-first Azure Dev path, and portability through adapter contracts.

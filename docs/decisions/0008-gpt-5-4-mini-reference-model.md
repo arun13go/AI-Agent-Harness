@@ -5,7 +5,7 @@
 
 ## Context
 
-The walking skeleton needs a current Foundry model with chat completion and Responses support,
+The first end-to-end agent foundation needs a current Foundry model with chat completion and Responses support,
 structured tool use, streaming, and a cost/latency profile suitable for repeated development and
 evaluation. The model is a tested baseline, not part of the framework-neutral model-client
 contract.

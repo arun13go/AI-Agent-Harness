@@ -2,215 +2,262 @@
 
 > **Audience:** contributors and maintainers  
 > **Status:** current and authoritative  
-> **Purpose:** delivery sequence, phase status, artifacts, and completion evidence
+> **Purpose:** delivery order, current status, and completion evidence
 
-## Purpose
+This plan says **what ships when**. The [pattern catalogue](pattern-catalog.md) defines detailed
+behavior, and the [adapter contract guide](../architecture/adapter-contracts.md) defines shared
+adapter expectations.
 
-This is the canonical delivery roadmap for implementing the Agent Harness. The [pattern catalogue](pattern-catalog.md) defines capability semantics and alternatives; this plan controls sequencing, scope, status, artifacts, and completion evidence.
+## Delivery Rules
 
-## Delivery Strategy
+- Build thin, testable increments.
+- Keep local policy tests independent of Azure.
+- Use released MAF capabilities instead of creating another agent runtime.
+- Record architecture changes in ADRs.
+- Mark a phase complete only when its exit evidence passes.
 
-Build thin, testable increments. Every phase must leave the repository in a coherent state, and every implementation must reference the pattern IDs it satisfies. Released Microsoft Agent Framework (MAF) Harness capabilities own agent execution; this repository adds policy, typed ports, reference adapters, configuration, evaluation, and deployment.
+## Status
 
-The first end-to-end milestone is deliberately narrow: an authenticated caller invokes an Azure-hosted MAF agent, the agent calls a typed read tool, proposes an approval-gated action, records correlated audit events, exports traces, and passes the same deterministic policy tests locally.
-
-## Status and Tracking
-
-| Status | Meaning |
-|---|---|
-| Not started | No implementation artifact exists |
-| In progress | Work has started but exit evidence is incomplete |
-| Blocked | A named dependency prevents progress |
-| Complete | All exit evidence is recorded and passing |
-
-Update phase status only when its evidence changes. GitHub issues should reference the phase and pattern IDs, while temporary command output and investigation notes stay under ignored `.local/logs/`.
-
-| Phase | Deliverable | Status |
+| Phase | Outcome | Status |
 |---|---|---|
-| 0 | Tooling, decisions, and scope | Complete |
-| 1 | Contracts, policy core, and cloud walking skeleton | Not started |
-| 2 | Grounding and context profile | Not started |
-| 3 | Durable Azure reference adapters | Not started |
+| 0 | Tooling, schemas, contracts, and decisions | Complete |
+| 1A | Governance and read path foundation | Not started |
+| 1B | Approval and action lifecycle | Not started |
+| 1C | MAF and Foundry runtime integration | Not started |
+| 1D | Azure Dev deployment | Not started |
+| 2 | Grounded-assistant profile | Not started |
+| 3 | Durable Azure adapters | Not started |
 | 4 | Evaluation and operations | Not started |
 | 5 | Deployment and CI hardening | Not started |
 | 6 | Pilots and v1.0 release | Not started |
 
-## Phase 0: Tooling, Decisions, and Scope
+## Architecture Evolution
 
-**Goal:** Freeze the v1.0 boundary and establish a reproducible toolchain before scaffolding.
+Each phase adds one capability layer. Detailed behavior remains authoritative in the
+[pattern catalogue](pattern-catalog.md).
 
-**Patterns:** all areas in the [pattern catalogue](pattern-catalog.md) as planning inputs.
+```mermaid
+flowchart LR
+    P0[Phase 0<br/>Define contracts]
+    P1[Phase 1<br/>Run governed agent]
+    P2[Phase 2<br/>Ground answers]
+    P3[Phase 3<br/>Persist in Azure]
+    P4[Phase 4<br/>Measure readiness]
+    P5[Phase 5<br/>Harden delivery]
+    P6[Phase 6<br/>Validate v1.0]
 
-- Confirm Python as the first implementation language.
-- Confirm MAF Harness and Foundry as the v1.0 runtime/platform pair.
-- Upgrade Azure Developer CLI and install the compatible `microsoft.foundry` extension.
-- Pin supported Python, package manager, MAF, Azure SDK, lint, type-check, and test versions.
-- Select the first Foundry model before writing model-dependent code.
-- Complete ADRs for runtime, hosting topology, state store, retrieval profile, memory, and deployment where decisions remain open.
-- Define configuration JSON Schema and normalized run-event schema.
-- Define conformance tests for runtime, memory, state, approval, and audit adapters.
-- Mark experimental MAF capabilities and post-v1.0 work explicitly.
+    P0 --> P1 --> P2 --> P3 --> P4 --> P5 --> P6
+```
 
-**Artifacts:** dependency manifest and lock, tool-version policy, schemas, conformance-test design, remaining ADRs, and contributor setup instructions.
+### Phase 0: Define the Rules
 
-**Exit:** Foundry dependency setup passes, schemas review cleanly, the architecture has no unresolved critical decision, and a clean machine can install the pinned development toolchain.
+```mermaid
+flowchart LR
+    ADR[Decisions] --> CONTRACTS[Typed contracts]
+    CONFIG[Configuration schema] --> TESTS[Deterministic checks]
+    EVENTS[Run-event schema] --> TESTS
+    CONTRACTS --> TESTS
+```
 
-### Completion Evidence
+Phase 0 defines and validates the boundaries before runtime implementation.
 
-Completed 8 October 2026:
+### Phase 1: Run the First Governed Agent
 
-- Python 3.12, uv 0.11.15, released MAF Core 1.19.0, Foundry adapter 1.13.1, and
-  development dependencies are pinned in `pyproject.toml` and `uv.lock`.
-- `uv sync --frozen` created a clean Python 3.12.13 environment from the lock.
-- The Foundry dependency setup check passed with azd 1.34.2 and
-  `microsoft.foundry` 1.0.0-beta.2.
-- The live Foundry catalog verified the reference `gpt-5.4-mini` model version
-  `2026-03-17`; ADR 0008 requires deployment-time region, lifecycle, capability, and quota
-  validation.
-- ADRs 0005-0007 resolve reference state, memory, and retrieval choices.
-- Three example profiles and both versioned JSON Schemas pass 14 deterministic schema and
-  contract-surface tests.
-- Strict Pyright, Ruff, and `uv lock --check` pass.
-- Shared adapter semantics and future conformance suites are defined in the
-  [adapter contract and conformance design](../architecture/adapter-contracts.md).
+```mermaid
+flowchart LR
+    P1A[1A<br/>Governed read]
+    P1B[1B<br/>Approval and action]
+    P1C[1C<br/>MAF and Foundry]
+    P1D[1D<br/>Azure Dev]
 
-## Phase 1: Cloud Walking Skeleton
+    P1A --> P1B --> P1C --> P1D
+```
 
-**Goal:** A clean clone deploys a usable Azure Dev environment while deterministic tests remain cloud-independent.
+Phase 1 proves the local governance lifecycle, then connects and deploys it without changing the
+policy envelope.
 
-**Patterns:** [MEM-01](pattern-catalog.md#mem-01), [MEM-02](pattern-catalog.md#mem-02), [STATE-01](pattern-catalog.md#state-01), [STATE-02](pattern-catalog.md#state-02), [STATE-03](pattern-catalog.md#state-03), [STATE-04](pattern-catalog.md#state-04), [STATE-05](pattern-catalog.md#state-05), [CTX-01](pattern-catalog.md#ctx-01), [CTX-02](pattern-catalog.md#ctx-02), [CTX-03](pattern-catalog.md#ctx-03), [CTX-04](pattern-catalog.md#ctx-04), [CTX-05](pattern-catalog.md#ctx-05), [SEC-01](pattern-catalog.md#sec-01), [SEC-02](pattern-catalog.md#sec-02), [SEC-03](pattern-catalog.md#sec-03), [SEC-04](pattern-catalog.md#sec-04), [SEC-05](pattern-catalog.md#sec-05), [SEC-06](pattern-catalog.md#sec-06), [SEC-07](pattern-catalog.md#sec-07), [POL-01](pattern-catalog.md#pol-01), [POL-02](pattern-catalog.md#pol-02), [POL-03](pattern-catalog.md#pol-03), [POL-04](pattern-catalog.md#pol-04), [POL-05](pattern-catalog.md#pol-05), [POL-06](pattern-catalog.md#pol-06), [POL-07](pattern-catalog.md#pol-07), [TOOL-01](pattern-catalog.md#tool-01), [TOOL-02](pattern-catalog.md#tool-02), [TOOL-03](pattern-catalog.md#tool-03), [TOOL-04](pattern-catalog.md#tool-04), [EVAL-01](pattern-catalog.md#eval-01), [OBS-01](pattern-catalog.md#obs-01), [OBS-02](pattern-catalog.md#obs-02), [OBS-04](pattern-catalog.md#obs-04), and [OBS-05](pattern-catalog.md#obs-05).
+### Phase 2: Ground Answers
 
-- Define identity, configuration, event, runtime, model, memory, state, artifact, approval, tool, audit, and evaluation types and protocols.
-- Implement a code-owned registry that maps validated configuration names to installed implementations.
-- Implement deterministic governance for identity scope, execution ceilings, tool allow-listing and risk tiers, approval, idempotency, and audit.
-- Compose a MAF Harness agent with one read tool and one proposed action.
-- Add bounded steps, timeout, typed errors, and structured run events.
-- Add minimal `azure.yaml` and Bicep for the harness host, Foundry connection and managed identity.
-- Add in-memory session, conversation memory, run state, checkpoint, artifact, approval, idempotency, and audit adapters for local tests.
-- Add deterministic policy tests, including prompt-injection and approval bypass cases.
-- Add a CLI or minimal API and VS Code Agent Inspector configuration.
+```mermaid
+flowchart LR
+    QUESTION[Question] --> SEARCH[Authorized retrieval]
+    SEARCH --> GATE{Enough evidence?}
+    GATE -->|Yes| ANSWER[Answer with citations]
+    GATE -->|No| SAFE[Clarify or abstain]
+```
 
-**Artifacts:** core contracts, validated profiles, MAF and Foundry adapters, sample tools, in-memory adapters, minimal Azure infrastructure, debug configuration, and smoke tests.
+Phase 2 adds evidence retrieval, citations, freshness, and safe insufficient-evidence routes.
 
-**Exit:** schema and conformance tests pass; a local read path completes; an action pauses for approval, resumes once, and remains idempotent after replay; `azd up` and **Deploy to Azure** create equivalent Azure Dev environments; the cloud smoke test passes; local policy tests require no Azure connection.
+### Phase 3: Persist in Azure
 
-## Phase 2: Grounding and Context
+```mermaid
+flowchart LR
+    HARNESS[Agent Harness] --> MEMORY[Cosmos DB memory]
+    HARNESS --> STATE[Cosmos DB state]
+    HARNESS --> ARTIFACTS[Blob artifacts]
+    HARNESS --> AUDIT[Durable audit]
+```
 
-**Goal:** Prove configurable context behavior without coupling it to the runtime.
+Phase 3 replaces in-memory adapters without changing agent policy.
 
-**Patterns:** [CTX-01](pattern-catalog.md#ctx-01), [CTX-02](pattern-catalog.md#ctx-02), [CTX-03](pattern-catalog.md#ctx-03), [CTX-04](pattern-catalog.md#ctx-04), [CTX-05](pattern-catalog.md#ctx-05), [CTX-06](pattern-catalog.md#ctx-06), [CTX-07](pattern-catalog.md#ctx-07), [RET-01](pattern-catalog.md#ret-01), [RET-02](pattern-catalog.md#ret-02), [RET-03](pattern-catalog.md#ret-03), [RET-04](pattern-catalog.md#ret-04), [RET-05](pattern-catalog.md#ret-05), [RET-06](pattern-catalog.md#ret-06), [RET-07](pattern-catalog.md#ret-07), [MEM-03](pattern-catalog.md#mem-03), and [EVAL-03](pattern-catalog.md#eval-03).
+### Phase 4: Measure Readiness
 
-- Add retrieval and chunking contracts with a structure-aware default.
-- Add keyword, vector, hybrid retrieval, and optional semantic reranking through the retrieval port.
-- Add source metadata, freshness, result-by-handle, context budget, source labeling, and structured compaction policy.
-- Add episodic-memory write policy for significant interactions only.
-- Add the answerability gate and all controlled routes.
-- Add ingestion versioning and freshness metadata.
-- Add test cases for weak, conflicting, stale, and sufficient evidence.
+```mermaid
+flowchart LR
+    RUNS[Agent runs] --> TELEMETRY[Operational telemetry]
+    RUNS --> EVALUATION[Foundry evaluation]
+    TELEMETRY --> RELEASE{Release decision}
+    EVALUATION --> RELEASE
+```
 
-**Artifacts:** grounded-assistant profile, Azure AI Search adapter, ingestion pipeline, answerability policy, and grounding fixtures.
+Phase 4 combines service health and agent-quality evidence into one release decision.
 
-**Exit:** the same test dataset can compare retrieval, chunking, and context profiles; citations retain source and version metadata; weak evidence never becomes an unsupported confident answer.
+### Phase 5: Harden Delivery
 
-## Phase 3: Azure Reference Adapters
+```mermaid
+flowchart LR
+    BICEP[Canonical Bicep] --> AZD[azd up]
+    BICEP --> ARM[Generated ARM]
+    ARM --> PORTAL[Deploy to Azure]
+    AZD --> AZURE[Equivalent environments]
+    PORTAL --> AZURE
+    BICEP --> CI[Drift and parity checks]
+    ARM --> CI
+```
 
-**Goal:** Replace development infrastructure without changing agent policy.
+Phase 5 makes both deployment paths repeatable and rejects infrastructure drift.
 
-**Patterns:** [MEM-02](pattern-catalog.md#mem-02), [MEM-03](pattern-catalog.md#mem-03), [STATE-01](pattern-catalog.md#state-01), [STATE-02](pattern-catalog.md#state-02), [STATE-03](pattern-catalog.md#state-03), [STATE-04](pattern-catalog.md#state-04), [STATE-05](pattern-catalog.md#state-05), [CACHE-02](pattern-catalog.md#cache-02), [CACHE-03](pattern-catalog.md#cache-03), [OBS-01](pattern-catalog.md#obs-01), [OBS-02](pattern-catalog.md#obs-02), [OBS-03](pattern-catalog.md#obs-03), [OBS-04](pattern-catalog.md#obs-04), and [OBS-05](pattern-catalog.md#obs-05).
+### Phase 6: Validate v1.0
 
-- Harden the Foundry model adapter with usage metadata and normalized errors.
-- Add selected Azure conversation memory, episodic memory, durable state, artifact, idempotency, cache, and audit implementations.
-- Export OpenTelemetry traces to Application Insights with payload capture off by default.
-- Cache only immutable retrieval artifacts and authorization-safe read-tool results.
-- Preserve tenant/user scope, provenance, retention, deletion, optimistic concurrency, and append-only audit behavior in adapter contract tests.
+```mermaid
+flowchart LR
+    TEMPLATE[Tagged template] --> GROUND[Grounded pilot]
+    TEMPLATE --> ACTION[Action pilot]
+    GROUND --> EVIDENCE[Release evidence]
+    ACTION --> EVIDENCE
+    EVIDENCE --> RELEASE[v1.0]
+```
 
-**Artifacts:** Azure storage adapters, retention configuration, infrastructure modules, telemetry export, and integration tests.
+Phase 6 proves that different customer scenarios retain the same governance and evaluation
+controls. The complete target is shown in the
+[reference architecture](../architecture/overview.md).
 
-**Exit:** local and Azure adapter suites pass the same conformance tests, including cross-tenant, stale-write, expiry, deletion, retry, and duplicate-delivery cases.
+## Phase 0: Foundation
 
-## Phase 4: Evaluation and Operations
+Phase 0 established:
 
-**Goal:** Make production readiness measurable.
+- Python 3.12, pinned dependencies, `uv.lock`, and contributor setup.
+- Versioned configuration and run-event schemas with three example profiles.
+- Framework-neutral types, adapter protocols, and conformance-test design.
+- ADRs for MAF, Azure Dev, deployment, state, memory, retrieval, and the reference model.
 
-**Patterns:** [EVAL-01](pattern-catalog.md#eval-01), [EVAL-02](pattern-catalog.md#eval-02), [EVAL-03](pattern-catalog.md#eval-03), [EVAL-04](pattern-catalog.md#eval-04), [EVAL-05](pattern-catalog.md#eval-05), [EVAL-06](pattern-catalog.md#eval-06), [EVAL-07](pattern-catalog.md#eval-07), [EVAL-08](pattern-catalog.md#eval-08), [OBS-01](pattern-catalog.md#obs-01), [OBS-02](pattern-catalog.md#obs-02), [OBS-03](pattern-catalog.md#obs-03), [OBS-04](pattern-catalog.md#obs-04), and [OBS-05](pattern-catalog.md#obs-05).
+**Evidence:** dependency setup, schema and contract tests, Pyright, Ruff, and lock validation pass.
 
-- Create smoke and regression datasets under `evals/`.
-- Measure relevance, task adherence, intent resolution, tool-call accuracy, answerability/groundedness, indirect attack resistance, latency, and cost.
-- Separate infrastructure SLOs from outcome-quality thresholds and correlate by run ID.
-- Add reviewed trace-to-regression workflow and versioned evaluation result artifacts recording dataset, prompt, model, policy, evaluator, and candidate versions.
-- Gate pull requests on deterministic tests first; use a small stable evaluation smoke gate before broader scheduled evaluation.
+## Phase 1: Governed Agent End-to-End Foundation
 
-**Artifacts:** datasets, evaluators, thresholds, runner, operational and quality scorecards, baseline, and comparison reports.
+**Goal:** prove a governed read path and approval-gated action path, compose them through MAF and
+Foundry, and deploy the same minimal application to Azure Dev.
 
-**Exit:** a release candidate produces one go-live evidence report containing policy tests, evaluation comparison, red-team results, telemetry checks, latency, and cost.
+### Phase 1A: Governance and Read Path Foundation
 
-## Phase 5: Azure Deployment Paths
+**Build**
 
-**Goal:** Harden the Phase 1 Azure Dev deployment for repeatable customer use.
+- Validated YAML configuration and a code-owned registry.
+- Tenant, subject, run, trace, permission, and deadline context.
+- One typed read tool, execution ceilings, normalized errors, and an in-memory audit sink.
+- A local CLI and deterministic policy tests.
 
-**Patterns:** [SEC-01](pattern-catalog.md#sec-01), [SEC-05](pattern-catalog.md#sec-05), [SEC-07](pattern-catalog.md#sec-07), with [SEC-08](pattern-catalog.md#sec-08) documented as a production overlay.
+**Pattern focus:** [MEM-01](pattern-catalog.md#mem-01),
+[STATE-01](pattern-catalog.md#state-01), [SEC-02](pattern-catalog.md#sec-02) to
+[SEC-04](pattern-catalog.md#sec-04), [SEC-06](pattern-catalog.md#sec-06),
+[POL-01](pattern-catalog.md#pol-01) to [POL-03](pattern-catalog.md#pol-03),
+[TOOL-01](pattern-catalog.md#tool-01), [TOOL-04](pattern-catalog.md#tool-04),
+[EVAL-01](pattern-catalog.md#eval-01), [OBS-04](pattern-catalog.md#obs-04), and
+[OBS-05](pattern-catalog.md#obs-05).
 
-- Harden `azure.yaml` and modular Bicep with role assignments, outputs, tags, and environment overlays.
-- Add preflight for authentication, provider registration, region/model availability, and quota.
-- Add post-deploy smoke tests and documented `azd down` cleanup.
-- Add GitHub Actions with workload identity federation for validation and deployment.
-- Add a **Deploy to Azure** button using an ARM artifact generated from the canonical Bicep.
-- Add CI checks for template drift and parity of parameters, RBAC, outputs and smoke tests across both paths.
-- Document private-networking and enterprise landing-zone integration without deploying the customer's landing zone.
+**Exit:** the local read path succeeds; unknown or unauthorized tools fail; identity reaches every
+tool and event; audit records contain no prohibited payload; Azure is not required.
 
-**Artifacts:** hardened infrastructure, generated ARM artifact, deployment button, CI workflows, preflight checks, smoke tests, and runbooks.
+### Phase 1B: Approval and Action Lifecycle
 
-**Exit:** both deployment paths succeed in clean resource groups and produce equivalent validated environments; CI rejects generated-template drift.
+**Build**
 
-## Phase 6: Pilot and Harden
+- One proposal tool and one deterministic sample action.
+- In-memory run state, checkpoint, approval, artifact handle, and idempotency ledger.
+- Approval, denial, expiry, resume, replay, and partial-failure tests.
 
-**Goal:** Validate repeatability with two materially different customer scenarios.
+**Pattern focus:** [STATE-02](pattern-catalog.md#state-02) to
+[STATE-05](pattern-catalog.md#state-05), [POL-04](pattern-catalog.md#pol-04),
+[POL-05](pattern-catalog.md#pol-05), [POL-07](pattern-catalog.md#pol-07),
+[TOOL-02](pattern-catalog.md#tool-02), and [TOOL-03](pattern-catalog.md#tool-03).
 
-**Patterns:** all v1.0 patterns in the [pattern catalogue](pattern-catalog.md).
+**Exit:** an action cannot run before approval; denial and expiry block it; approval resumes once;
+replay does not repeat the effect.
 
-- Pilot one grounded read-heavy use case and one approval-gated action use case.
-- Record every changed configuration field, replaced adapter, and bypass attempt.
-- Tighten defaults, remove unused abstractions, and publish migration notes.
-- Create the workshop labs from the verified clone-to-run path.
-- Produce a signed-off v1.0 evidence report and tagged release.
+### Phase 1C: MAF and Foundry Runtime Integration
 
-**Artifacts:** pilot reports, updated guidance, release evidence, changelog, and v1.0 tag.
+**Build**
 
-**Exit:** both pilots deploy from the same tagged template and retain the same governance/evaluation controls; a clean clone meets the repository definition of done.
+- Released MAF Harness composition around the Phase 1A and 1B policy envelope.
+- Foundry model adapter with streaming, usage, cancellation, and normalized provider errors.
+- Bounded conversation history, source labels, tracing, and VS Code Agent Inspector configuration.
 
-## Deferred Backlog
+**Pattern focus:** [MEM-02](pattern-catalog.md#mem-02),
+[CTX-01](pattern-catalog.md#ctx-01), [CTX-02](pattern-catalog.md#ctx-02),
+[CTX-05](pattern-catalog.md#ctx-05), and [OBS-01](pattern-catalog.md#obs-01).
 
-- [MEM-04](pattern-catalog.md#mem-04) semantic-memory Azure implementation and [MEM-05](pattern-catalog.md#mem-05) preference-memory Azure implementation.
-- [CTX-07](pattern-catalog.md#ctx-07) hierarchical context implementation and [STATE-06](pattern-catalog.md#state-06) event-sourced reconstruction.
-- [CACHE-01](pattern-catalog.md#cache-01) exact-key model caching and [CACHE-04](pattern-catalog.md#cache-04) semantic response caching.
-- [POL-08](pattern-catalog.md#pol-08) dynamic model and tool routing.
-- v2 Copilot discovery: select one Microsoft 365 Copilot scenario, classify the integration boundary, and complete identity, tool, state, approval, audit, telemetry, and evaluation gap analysis.
-- v2 Copilot prototype: implement one read-only or propose-only Microsoft 365 Copilot path and publish its conformance report.
-- v3 Copilot productization: add only adapters or deployment profiles that pass applicable shared contracts and have demonstrated field demand; keep GitHub Copilot coding agents as a separate scenario track.
-- Other second runtime adapters and framework conformance reports.
-- Multi-agent workflows and background agents.
-- AgentOps Accelerator export adapter.
-- Private networking modules beyond documented enterprise integration points.
-- Additional language implementations.
+**Exit:** the reference model selects a registered tool through MAF; governance remains code-owned;
+model and tool spans share run correlation.
 
-## Initial GitHub Work Items
+### Phase 1D: Azure Dev Deployment
 
-| Order | Work item | Phase | Pattern references | Evidence |
-|---|---|---|---|---|
-| 1 | Upgrade and pin the development toolchain | 0 | All | Dependency setup output |
-| 2 | Define identity, configuration, and event schemas | 1 | [SEC-02](pattern-catalog.md#sec-02), [SEC-04](pattern-catalog.md#sec-04), [OBS-04](pattern-catalog.md#obs-04) | Schema and type checks |
-| 3 | Define adapter protocols and conformance harness | 1 | [Memory](pattern-catalog.md#memory-patterns), [state](pattern-catalog.md#state-management-patterns), [tools](pattern-catalog.md#tool-patterns), [evaluation](pattern-catalog.md#evaluation-patterns) | Contract-test collection |
-| 4 | Implement mandatory governance policy | 1 | [Governance and policy patterns](pattern-catalog.md#governance-and-policy-patterns) | Policy test suite |
-| 5 | Compose local MAF vertical slice | 1 | [TOOL-01](pattern-catalog.md#tool-01), [TOOL-02](pattern-catalog.md#tool-02), [TOOL-03](pattern-catalog.md#tool-03), [TOOL-04](pattern-catalog.md#tool-04) | Local behavior smoke test |
-| 6 | Deploy Azure Dev vertical slice | 1 | [SEC-01](pattern-catalog.md#sec-01), [OBS-01](pattern-catalog.md#obs-01), [OBS-02](pattern-catalog.md#obs-02) | Cloud smoke and trace checks |
-| 7 | Implement grounded-assistant profile | 2 | [Context](pattern-catalog.md#context-management-patterns), [retrieval](pattern-catalog.md#retrieval-and-grounding-patterns), [MEM-03](pattern-catalog.md#mem-03) | Grounding matrix |
-| 8 | Add durable Azure adapters | 3 | [MEM-02](pattern-catalog.md#mem-02), [MEM-03](pattern-catalog.md#mem-03), [state](pattern-catalog.md#state-management-patterns), [CACHE-02](pattern-catalog.md#cache-02), [CACHE-03](pattern-catalog.md#cache-03) | Shared conformance results |
-| 9 | Add evaluation and operational scorecards | 4 | [Evaluation](pattern-catalog.md#evaluation-patterns), [observability](pattern-catalog.md#observability-and-audit-patterns) | Baseline report |
-| 10 | Harden dual deployment and CI | 5 | [SEC-01](pattern-catalog.md#sec-01), [SEC-05](pattern-catalog.md#sec-05), [SEC-07](pattern-catalog.md#sec-07) | Clean deployment comparison |
-| 11 | Run pilots and publish v1.0 | 6 | [All v1.0 patterns](pattern-catalog.md) | Pilot and release reports |
+**Build**
 
-## Tooling Baseline
+- Preflight for tools, authentication, providers, model availability, and quota.
+- Minimal `azure.yaml` and canonical Bicep for hosting, managed identity, Foundry, RBAC, and
+  Application Insights.
+- An initial generated **Deploy to Azure** artifact plus cloud smoke and trace checks.
 
-The previous azd extension blocker is resolved. The supported Phase 0 baseline and upgrade policy
-are recorded in [the toolchain policy](../getting-started/toolchain.md). Phase 1 must convert those
-requirements into an executable environment preflight before deployment.
+**Pattern focus:** [SEC-01](pattern-catalog.md#sec-01),
+[SEC-05](pattern-catalog.md#sec-05), [SEC-07](pattern-catalog.md#sec-07),
+[OBS-01](pattern-catalog.md#obs-01), and [OBS-02](pattern-catalog.md#obs-02).
+
+**Exit:** both deployment entry points create the minimal Azure Dev topology; one managed-identity
+request completes with correlated traces; local policy tests still require no Azure connection.
+
+### Phase 1 Boundary
+
+Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It excludes:
+
+- Retrieval, citations, answerability, and advanced context policy — Phase 2.
+- Cosmos DB, Blob Storage, and durable Azure adapters — Phase 3.
+- Production evaluation, dashboards, and outcome scorecards — Phase 4.
+- Full deployment parity, CI federation, private networking, and production overlays — Phase 5.
+
+## Later Phases
+
+| Phase | Deliverable | Exit evidence |
+|---|---|---|
+| 2: Grounding and context | Azure AI Search ingestion and retrieval, citations, freshness, compaction, episodic-memory policy, and answerability routes | Weak, stale, conflicting, and sufficient evidence follow the correct route |
+| 3: Azure reference adapters | Cosmos DB memory and run state, Blob artifacts, Azure cache and audit, retention, and Application Insights export | In-memory and Azure adapters pass the same isolation, concurrency, expiry, deletion, and replay tests |
+| 4: Evaluation and operations | Versioned datasets, deterministic and Foundry evaluators, operational SLOs, outcome thresholds, and regression comparison | One go-live report covers policy, quality, safety, latency, cost, and telemetry |
+| 5: Deployment and CI hardening | Modular Bicep, workload-identity CI, preflight, cleanup, production guidance, generated ARM, and drift checks | Both deployment paths pass clean-resource-group tests and CI rejects drift |
+| 6: Pilots and release | One grounded pilot, one action pilot, tightened defaults, migration guidance, and release evidence | Both pilots deploy from one tag and preserve mandatory controls |
+
+## Deferred
+
+- Semantic and preference-memory Azure implementations.
+- Event-sourced reconstruction and hierarchical context.
+- Exact-key and semantic response caching.
+- Dynamic model/tool routing.
+- Multi-agent workflows, background agents, additional runtimes, and additional languages.
+- Copilot discovery and conformance work after v1.0.
+- Private-networking modules beyond production integration guidance.
+
+## Current Next Step
+
+Start **Phase 1A**. Do not begin MAF, Foundry, or Azure deployment work until the local read path and
+its deterministic governance tests pass.
+
+Tool versions and upgrade policy are in the
+[toolchain policy](../getting-started/toolchain.md).

@@ -25,7 +25,7 @@ uv run ruff check .
 uv lock --check
 ```
 
-Cloud integration and deployment checks will be added with the Phase 1 walking skeleton.
+Cloud integration and deployment checks will be added with the Phase 1 end-to-end foundation.
 Never commit `.azure/`, credentials, tenant identifiers, subscription identifiers, connection
 strings, or generated credentials.
 

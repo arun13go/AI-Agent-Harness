@@ -1,5 +1,7 @@
 # pyright: reportUnknownMemberType=false
 
+"""Verify profiles and run events satisfy their versioned schemas."""
+
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -15,16 +17,22 @@ PROFILE_DIR = ROOT / "config" / "profiles"
 
 
 def load_json(path: Path) -> dict[str, object]:
+    """Load a JSON object fixture."""
+
     with path.open(encoding="utf-8") as stream:
         return cast(dict[str, object], json.load(stream))
 
 
 def load_yaml(path: Path) -> dict[str, object]:
+    """Load a YAML object fixture."""
+
     with path.open(encoding="utf-8") as stream:
         return cast(dict[str, object], yaml.safe_load(stream))
 
 
 def validator(name: str) -> Draft202012Validator:
+    """Build a format-aware validator for a versioned schema."""
+
     schema = load_json(SCHEMA_DIR / name)
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema, format_checker=FormatChecker())

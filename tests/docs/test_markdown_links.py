@@ -1,3 +1,5 @@
+"""Verify repository-local Markdown links resolve."""
+
 import re
 from pathlib import Path
 from urllib.parse import unquote

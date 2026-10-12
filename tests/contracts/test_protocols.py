@@ -1,3 +1,5 @@
+"""Verify shared adapter contracts remain structural protocols."""
+
 from typing import Protocol
 
 from agent_harness.core import contracts

@@ -1,3 +1,5 @@
+"""Define framework-neutral values shared by contracts and adapters."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -151,6 +153,7 @@ class ToolResult:
     call_id: str
     value: JsonValue
     artifact_ref: str | None = None
+    source_label: str = "untrusted-tool-output"
 
 
 @dataclass(frozen=True, slots=True)

@@ -21,7 +21,7 @@ adapter expectations.
 | Phase | Outcome | Status |
 |---|---|---|
 | 0 | Tooling, schemas, contracts, and decisions | Complete |
-| 1A | Governance and read path foundation | Not started |
+| 1A | Governance and read path foundation | Complete |
 | 1B | Approval and action lifecycle | Not started |
 | 1C | MAF and Foundry runtime integration | Not started |
 | 1D | Azure Dev deployment | Not started |
@@ -177,6 +177,9 @@ Foundry, and deploy the same minimal application to Azure Dev.
 
 **Exit:** the local read path succeeds; unknown or unauthorized tools fail; identity reaches every
 tool and event; audit records contain no prohibited payload; Azure is not required.
+
+**Evidence:** strict profile loading, registry and policy tests, tenant-scoped read execution, safe
+four-event audit lifecycle, local CLI, Pyright, Ruff, and deterministic tests pass without Azure.
 
 ### Phase 1B: Approval and Action Lifecycle
 

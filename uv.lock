@@ -57,6 +57,7 @@ dependencies = [
     { name = "agent-framework-core" },
     { name = "agent-framework-foundry" },
     { name = "azure-identity" },
+    { name = "jsonschema" },
     { name = "opentelemetry-api" },
     { name = "opentelemetry-sdk" },
     { name = "pydantic" },
@@ -65,7 +66,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "jsonschema" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -77,6 +77,7 @@ requires-dist = [
     { name = "agent-framework-core", specifier = "==1.19.0" },
     { name = "agent-framework-foundry", specifier = "==1.13.1" },
     { name = "azure-identity", specifier = "==1.26.0" },
+    { name = "jsonschema", specifier = "==4.26.0" },
     { name = "opentelemetry-api", specifier = "==1.45.0" },
     { name = "opentelemetry-sdk", specifier = "==1.45.0" },
     { name = "pydantic", specifier = "==2.12.5" },
@@ -85,7 +86,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "jsonschema", specifier = "==4.26.0" },
     { name = "pyright", specifier = "==1.1.414" },
     { name = "pytest", specifier = "==9.1.1" },
     { name = "pytest-asyncio", specifier = "==1.4.0" },

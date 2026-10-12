@@ -1,7 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-harness.example/schemas/v1/run-event.schema.json",
+  "$comment": "Validates events written through the audit contract.",
   "title": "Normalized Agent Harness Run Event",
+  "description": "Privacy-safe lifecycle events shared by audit and telemetry adapters.",
   "type": "object",
   "additionalProperties": false,
   "required": [

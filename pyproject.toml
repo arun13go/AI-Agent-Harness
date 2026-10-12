@@ -1,3 +1,5 @@
+# Defines packaging, dependencies, CLI entry points, and validation tools.
+# Consumed by uv, Hatch, Pyright, pytest, and Ruff.
 [build-system]
 requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
@@ -12,15 +14,18 @@ dependencies = [
     "agent-framework-core==1.19.0",
     "agent-framework-foundry==1.13.1",
     "azure-identity==1.26.0",
+    "jsonschema==4.26.0",
     "opentelemetry-api==1.45.0",
     "opentelemetry-sdk==1.45.0",
     "pydantic==2.12.5",
     "pyyaml==6.0.3",
 ]
 
+[project.scripts]
+agent-harness = "agent_harness.app.cli:main"
+
 [dependency-groups]
 dev = [
-    "jsonschema==4.26.0",
     "pyright==1.1.414",
     "pytest==9.1.1",
     "pytest-asyncio==1.4.0",
@@ -34,6 +39,8 @@ packages = ["src/agent_harness"]
 include = ["src", "tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 addopts = "-ra"
@@ -48,4 +55,4 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF", "D100"]

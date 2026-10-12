@@ -1,8 +1,11 @@
+# Read-only assistant profile requiring retrieval and answerability checks.
+# Validated by harness.schema.json; consumed by configuration.py.
 schemaVersion: 1
 profile: grounded-assistant
 runtime:
   adapter: maf
   maxSteps: 12
+  maxToolCalls: 4
   timeoutSeconds: 120
 model:
   provider: foundry

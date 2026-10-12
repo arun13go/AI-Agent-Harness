@@ -1,3 +1,5 @@
+"""Define adapter protocols implemented by runtime and storage modules."""
+
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping, Sequence
@@ -11,6 +13,7 @@ from agent_harness.core.types import (
     Message,
     ModelRequest,
     ModelResponse,
+    RequestContext,
     RetrievedItem,
     RunEvent,
     RunState,
@@ -90,7 +93,7 @@ class Tool(Protocol):
     async def invoke(
         self,
         *,
-        context: IdentityScope,
+        context: RequestContext,
         call: ToolCall,
         idempotency_key: str | None,
     ) -> ToolResult: ...

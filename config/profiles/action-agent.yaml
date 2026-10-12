@@ -1,8 +1,11 @@
+# Approval-gated profile permitting registered act-tier tools.
+# Validated by harness.schema.json; consumed by configuration.py.
 schemaVersion: 1
 profile: action-agent
 runtime:
   adapter: maf
   maxSteps: 12
+  maxToolCalls: 4
   timeoutSeconds: 120
 model:
   provider: foundry

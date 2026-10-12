@@ -1,7 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agent-harness.example/schemas/v1/harness.schema.json",
+  "$comment": "Validates profiles loaded by core.configuration.",
   "title": "Agent Harness Configuration",
+  "description": "Allowed runtime, model, governance, and observability settings.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -26,12 +28,17 @@
     "runtime": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["adapter", "maxSteps", "timeoutSeconds"],
+      "required": ["adapter", "maxSteps", "maxToolCalls", "timeoutSeconds"],
       "properties": {
         "adapter": {
           "const": "maf"
         },
         "maxSteps": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "maxToolCalls": {
           "type": "integer",
           "minimum": 1,
           "maximum": 64

@@ -4,8 +4,9 @@ A reusable template for building governed, observable, and evaluable AI agents i
 Azure tenant. It composes Microsoft Agent Framework (MAF) Harness for execution and Microsoft
 Foundry for models, evaluation, and tracing instead of creating another agent runtime.
 
-> **Current status:** Phase 0 is complete. Tooling, versioned schemas, typed adapter contracts, and
-> deterministic checks are ready. The runnable agent and Azure infrastructure begin in Phase 1.
+> **Current status:** Phase 1A is complete. A governed local read path now proves configuration,
+> identity, tool authorization, execution limits, safe audit events, and normalized errors without
+> Azure. Approval-gated actions are next in Phase 1B.
 
 ## Understand it in two minutes
 
@@ -31,11 +32,14 @@ ceilings.
 - Assistant, grounded-assistant, and action-agent example profiles.
 - Framework-neutral contracts for model, retrieval, context, memory, state, approval, tools, audit,
   and telemetry.
+- A deterministic local CLI with a tenant-scoped read tool, code-owned registry, governance checks,
+  and append-only in-memory audit.
 - Architecture decisions for MAF, Foundry, Cosmos DB, Azure AI Search, deployment, and the reference
   model.
 - Deterministic schema and contract checks that require no Azure connection.
 
-There is not yet a runnable agent or deployable Azure environment. Those are Phase 1 deliverables.
+The local runner intentionally has no model or Azure dependency. MAF and Foundry integration arrives
+in Phase 1C, followed by the deployable Azure Dev environment in Phase 1D.
 
 ## Quick start
 
@@ -52,6 +56,19 @@ uv run ruff check .
 
 Expected result: the test suite passes, type checking reports no errors, and linting succeeds.
 Azure access is not required for these checks.
+
+Run the Phase 1A local read path:
+
+```powershell
+uv run agent-harness run `
+  --profile config\profiles\assistant.yaml `
+  --tenant tenant-0001 `
+  --subject subject-0001 `
+  --service api
+```
+
+The result is labeled as untrusted tool output, while the four audit events record only identifiers,
+decisions, and lifecycle metadata.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the supported workflow and dependency-update policy.
 
@@ -70,6 +87,8 @@ Examples live under [`config/profiles/`](config/profiles/).
 | Path | Purpose |
 |---|---|
 | [`src/agent_harness/core/`](src/agent_harness/core/) | Framework-neutral types and adapter contracts |
+| [`src/agent_harness/adapters/`](src/agent_harness/adapters/) | Local storage and typed tool implementations |
+| [`src/agent_harness/app/`](src/agent_harness/app/) | Local runner and CLI composition |
 | [`config/`](config/) | Versioned schemas and safe example profiles |
 | [`tests/`](tests/) | Deterministic schema and contract checks |
 | [`docs/`](docs/) | Human documentation, decisions, delivery plan, and historical context |
@@ -88,16 +107,15 @@ only when their first working Phase 1 artifacts are added.
   [implementation plan](docs/delivery/implementation-plan.md).
 - **Reviewing decisions:** browse the [ADRs](docs/decisions/).
 
-The next executable milestone is:
+The next executable milestone is Phase 1B:
 
 ```text
-validated profile
-  -> identity and run context
-  -> MAF composition
-  -> typed read tool
-  -> normalized events
-  -> in-memory audit
-  -> deterministic policy tests
+typed action proposal
+  -> approval request
+  -> pause and checkpoint
+  -> approved resume
+  -> idempotent action
+  -> append-only audit
 ```
 
 ## Product boundary

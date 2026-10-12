@@ -12,8 +12,9 @@ the full pattern catalogue or historical blueprint.
 Read these in order:
 
 1. [Root README](../README.md) - product purpose, current status, quick start, and repository map.
-2. [Reference architecture](architecture/overview.md) - runtime flow and mandatory boundaries.
-3. [Contributor guide](../CONTRIBUTING.md) - setup and validation commands.
+2. [Developer code tour](getting-started/code-tour.md) - current files and end-to-end flows.
+3. [Reference architecture](architecture/overview.md) - runtime flow and mandatory boundaries.
+4. [Contributor guide](../CONTRIBUTING.md) - setup and validation commands.
 
 You should then know what the repository builds, what exists today, how to validate it, and what
 Phase 1 delivers next.
@@ -24,9 +25,10 @@ Before changing implementation:
 
 1. Complete the ten-minute orientation.
 2. Read the [implementation plan](delivery/implementation-plan.md) for current status and sequence.
-3. Read the [adapter contracts](architecture/adapter-contracts.md) when adding or changing an
+3. Use the [developer code tour](getting-started/code-tour.md) to trace the relevant runtime path.
+4. Read the [adapter contracts](architecture/adapter-contracts.md) when adding or changing an
    adapter.
-4. Inspect the relevant [configuration schema](../config/schema/v1/harness.schema.json), protocol,
+5. Inspect the relevant [configuration schema](../config/schema/v1/harness.schema.json), protocol,
    profile, and test rather than reading every document.
 
 ## Architecture path
@@ -47,6 +49,7 @@ reached. It is not a current requirement.
 |---|---|
 | Product summary and current status | [Root README](../README.md) |
 | Local setup and contributor commands | [Contributor guide](../CONTRIBUTING.md) |
+| Current source map and runtime walkthroughs | [Developer code tour](getting-started/code-tour.md) |
 | Tool and dependency versions | [Toolchain policy](getting-started/toolchain.md) |
 | Runtime architecture and mandatory controls | [Reference architecture](architecture/overview.md) |
 | Adapter behavior | [Adapter contracts](architecture/adapter-contracts.md) |
@@ -70,26 +73,26 @@ Other documents should link to these sources instead of copying their content.
 |   |-- profiles/                     # Safe example configurations
 |   `-- schema/v1/                    # Machine-enforced configuration and event contracts
 |-- src/agent_harness/core/           # Framework-neutral types and protocols
+|-- src/agent_harness/adapters/       # Local tools and storage adapters
+|-- src/agent_harness/app/            # Read/action runners and CLI
 |-- tests/                            # Deterministic schema and contract checks
 `-- docs/
     |-- README.md                     # This navigation guide
     |-- architecture/                 # Current design and adapter semantics
     |-- decisions/                    # Accepted ADRs
     |-- delivery/                     # Roadmap, status, and pattern catalogue
-    |-- getting-started/              # Toolchain policy
+    |-- getting-started/              # Toolchain policy and developer code tour
     `-- historical/                   # Superseded design-review provenance
 ```
 
-Runtime adapter, application, evaluation, and infrastructure folders are added during Phase 1 only
-when their first working artifacts exist.
+Evaluation and infrastructure folders are added only when their first working artifacts exist.
 
 ## Current status
 
 - **Phase 0:** complete and validated.
-- **Phase 1:** not started.
-- **Runnable agent:** not yet available.
+- **Phase 1A and 1B:** complete and validated.
+- **Local runtime:** governed read and approval-gated action paths are available.
+- **Model runtime:** MAF and Foundry integration begins in Phase 1C.
 - **Azure deployment:** not yet available.
 
-The current clone-and-run experience validates contracts locally. Do not infer that a documented
-future capability is already implemented; use the implementation plan status table as the source of
-truth.
+Use the implementation plan status table as the source of truth for future capabilities.

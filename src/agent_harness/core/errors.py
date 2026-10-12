@@ -49,6 +49,26 @@ class ToolExecutionError(HarnessError):
     code = "tool_execution_error"
 
 
+class ActionLifecycleError(HarnessError):
+    code = "action_lifecycle_error"
+
+
+class ApprovalError(ActionLifecycleError):
+    code = "approval_error"
+
+
+class ActionInProgressError(ActionLifecycleError):
+    code = "action_in_progress"
+
+
+class ActionOutcomeUnknownError(ActionLifecycleError):
+    code = "action_outcome_unknown"
+
+
+class ConcurrencyError(ActionLifecycleError):
+    code = "concurrency_error"
+
+
 class AuditError(HarnessError):
     code = "audit_error"
 

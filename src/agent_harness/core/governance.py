@@ -64,9 +64,9 @@ def validate_request_context(
 ) -> None:
     """Validate identifiers, identity binding, and deadline."""
 
+    validate_identity_scope(context.identity)
+    validate_identity_scope(authenticated_identity)
     for label, value in (
-        ("tenant scope", context.identity.tenant_scope),
-        ("subject scope", context.identity.subject_scope),
         ("run ID", context.run_id),
         ("correlation ID", context.correlation_id),
     ):
@@ -80,6 +80,17 @@ def validate_request_context(
         raise InputValidationError("Request deadline must be timezone-aware")
     if context.deadline <= (now or datetime.now(UTC)):
         raise ExecutionTimeoutError("Request deadline has expired")
+
+
+def validate_identity_scope(identity: IdentityScope) -> None:
+    """Validate tenant and subject identifiers without authorizing them."""
+
+    for label, value in (
+        ("tenant scope", identity.tenant_scope),
+        ("subject scope", identity.subject_scope),
+    ):
+        if not _OPAQUE_ID_PATTERN.fullmatch(value):
+            raise InputValidationError(f"{label.capitalize()} is not a valid opaque identifier")
 
 
 def authorize_tool(maximum_tier: ToolRiskTier, definition: ToolDefinition) -> None:

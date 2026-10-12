@@ -35,6 +35,11 @@ strings, or generated credentials.
 - Add one-line docstrings to public orchestration classes and major functions.
 - Start YAML/TOML configuration with purpose and consumer comments.
 - Use JSON Schema `$comment` and `description`; do not edit generated files such as `uv.lock`.
+- Keep the source-file count low: extend a cohesive module before adding another file.
+- Add a file only for a clear responsibility or architecture boundary; avoid both tiny wrappers and
+  oversized modules with unrelated concerns.
+- Update the [developer code tour](docs/getting-started/code-tour.md) when adding a major runtime
+  path, adapter boundary, or application entry point.
 
 ## Dependency updates
 

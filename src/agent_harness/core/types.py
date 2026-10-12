@@ -31,6 +31,14 @@ class RunStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
+class IdempotencyStatus(StrEnum):
+    NOT_STARTED = "not-started"
+    IN_PROGRESS = "in-progress"
+    SUCCEEDED = "succeeded"
+    FAILED_BEFORE_EFFECT = "failed-before-effect"
+    OUTCOME_UNKNOWN = "outcome-unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class IdentityScope:
     tenant_scope: str
@@ -132,10 +140,43 @@ class RunState:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactRecord:
+    artifact_id: str
+    identity: IdentityScope
+    value: JsonValue
+    created_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class ActionProposal:
+    proposal_id: str
+    context: RequestContext
+    tool_name: str
+    arguments_ref: str
+    digest: str
+    created_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class Checkpoint:
+    checkpoint_id: str
+    context: RequestContext
+    proposal_ref: str
+    proposal_digest: str
+    approval_ref: str
+    state_version: str
+    created_at: datetime
+    expires_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class ApprovalRequest:
     approval_id: str
     context: RequestContext
     proposal_ref: str
+    proposal_digest: str
     tool_name: str
     expires_at: datetime
 
@@ -143,6 +184,8 @@ class ApprovalRequest:
 @dataclass(frozen=True, slots=True)
 class ApprovalResult:
     approval_id: str
+    proposal_ref: str
+    proposal_digest: str
     decision: ApprovalDecision
     decided_by: IdentityScope
     decided_at: datetime
@@ -154,6 +197,24 @@ class ToolResult:
     value: JsonValue
     artifact_ref: str | None = None
     source_label: str = "untrusted-tool-output"
+
+
+@dataclass(frozen=True, slots=True)
+class PendingAction:
+    proposal_id: str
+    checkpoint_id: str
+    approval_id: str
+    proposal_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class IdempotencyRecord:
+    key: str
+    identity: IdentityScope
+    proposal_ref: str
+    status: IdempotencyStatus
+    result: ToolResult | None
+    updated_at: datetime
 
 
 @dataclass(frozen=True, slots=True)

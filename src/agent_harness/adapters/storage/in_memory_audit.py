@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -58,6 +60,7 @@ class InMemoryAuditSink:
         self._event_ids: set[str] = set()
         self._next_sequence: dict[str, int] = {}
         self._run_contexts: dict[str, tuple[str, str, str, str]] = {}
+        self._lock = asyncio.Lock()
 
     @property
     def events(self) -> tuple[RunEvent, ...]:
@@ -65,9 +68,20 @@ class InMemoryAuditSink:
 
         return tuple(self._events)
 
+    async def append_next(self, event: RunEvent) -> None:
+        """Atomically assign and append the next run sequence."""
+
+        async with self._lock:
+            sequence = self._next_sequence.get(event.context.run_id, 0)
+            self._append(replace(event, sequence=sequence))
+
     async def append(self, event: RunEvent) -> None:
         """Validate and append one event without allowing mutation or gaps."""
 
+        async with self._lock:
+            self._append(event)
+
+    def _append(self, event: RunEvent) -> None:
         if event.event_id in self._event_ids:
             raise DuplicateEventError(f"Event ID '{event.event_id}' already exists")
 

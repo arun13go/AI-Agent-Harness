@@ -22,7 +22,7 @@ adapter expectations.
 |---|---|---|
 | 0 | Tooling, schemas, contracts, and decisions | Complete |
 | 1A | Governance and read path foundation | Complete |
-| 1B | Approval and action lifecycle | Not started |
+| 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Not started |
 | 1D | Azure Dev deployment | Not started |
 | 2 | Grounded-assistant profile | Not started |
@@ -196,6 +196,10 @@ four-event audit lifecycle, local CLI, Pyright, Ruff, and deterministic tests pa
 
 **Exit:** an action cannot run before approval; denial and expiry block it; approval resumes once;
 replay does not repeat the effect.
+
+**Evidence:** proposal and act-tier tools, in-memory lifecycle adapters, approval-bound resume,
+atomic idempotency and audit sequencing, local action CLI, and deterministic denial, expiry,
+cross-tenant, mutation, replay, concurrency, and uncertain-outcome tests pass without Azure.
 
 ### Phase 1C: MAF and Foundry Runtime Integration
 

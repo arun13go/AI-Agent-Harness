@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime
-from uuid import uuid4
+from datetime import datetime
 
 from agent_harness.core.configuration import HarnessConfig
 from agent_harness.core.contracts import AuditSink, Tool
@@ -14,6 +13,7 @@ from agent_harness.core.errors import (
     HarnessError,
     ToolExecutionError,
 )
+from agent_harness.core.events import RunEventWriter
 from agent_harness.core.governance import (
     ExecutionBudget,
     authorize_tool,
@@ -23,9 +23,7 @@ from agent_harness.core.governance import (
 from agent_harness.core.registry import Registry
 from agent_harness.core.types import (
     IdentityScope,
-    JsonScalar,
     RequestContext,
-    RunEvent,
     ToolCall,
     ToolResult,
     ToolRiskTier,
@@ -47,8 +45,8 @@ class LocalReadRunner:
         self._config = config
         self._tools = tools
         self._audit_sink = audit_sink
-        self._clock = clock or (lambda: datetime.now(UTC))
-        self._event_id_factory = event_id_factory or (lambda: uuid4().hex)
+        self._clock = clock
+        self._event_id_factory = event_id_factory
 
     async def run(
         self,
@@ -59,37 +57,19 @@ class LocalReadRunner:
     ) -> ToolResult:
         """Execute one registered tool under the configured policy."""
 
-        validate_request_context(authenticated_identity, context, now=self._clock())
+        writer = RunEventWriter(
+            context=context,
+            audit_sink=self._audit_sink,
+            clock=self._clock,
+            event_id_factory=self._event_id_factory,
+        )
+        now = self._clock() if self._clock is not None else None
+        validate_request_context(authenticated_identity, context, now=now)
         budget = ExecutionBudget(
             max_steps=self._config.runtime.max_steps,
             max_tool_calls=self._config.runtime.max_tool_calls,
         )
-        sequence = 0
-
-        async def emit(
-            event_type: str,
-            *,
-            source: str,
-            outcome: str,
-            attributes: dict[str, JsonScalar | list[JsonScalar]],
-        ) -> None:
-            nonlocal sequence
-            await self._audit_sink.append(
-                RunEvent(
-                    schema_version=1,
-                    event_id=self._event_id_factory(),
-                    event_type=event_type,
-                    occurred_at=self._clock(),
-                    sequence=sequence,
-                    context=context,
-                    source=source,
-                    outcome=outcome,
-                    attributes=attributes,
-                )
-            )
-            sequence += 1
-
-        await emit("run.started", source="app", outcome="started", attributes={})
+        await writer.emit("run.started", source="app", outcome="started", attributes={})
         tool_started = False
         try:
             budget.consume_step()
@@ -101,7 +81,7 @@ class LocalReadRunner:
             validate_tool_call(tool.definition, call)
             budget.consume_tool_call()
 
-            await emit(
+            await writer.emit(
                 "tool.started",
                 source="tool",
                 outcome="started",
@@ -112,7 +92,10 @@ class LocalReadRunner:
                 },
             )
             tool_started = True
-            remaining = (context.deadline - self._clock()).total_seconds()
+            current_time = (
+                self._clock() if self._clock is not None else datetime.now(context.deadline.tzinfo)
+            )
+            remaining = (context.deadline - current_time).total_seconds()
             timeout_seconds = min(float(self._config.runtime.timeout_seconds), remaining)
             if timeout_seconds <= 0:
                 raise ExecutionTimeoutError("Request deadline expired before tool execution")
@@ -126,7 +109,7 @@ class LocalReadRunner:
             except TimeoutError as error:
                 raise ExecutionTimeoutError("Tool execution exceeded its deadline") from error
 
-            await emit(
+            await writer.emit(
                 "tool.completed",
                 source="tool",
                 outcome="succeeded",
@@ -136,17 +119,17 @@ class LocalReadRunner:
                     "riskTier": tool.definition.risk_tier.value,
                 },
             )
-            await emit("run.completed", source="app", outcome="succeeded", attributes={})
+            await writer.emit("run.completed", source="app", outcome="succeeded", attributes={})
             return result
         except HarnessError as error:
             if tool_started:
-                await emit(
+                await writer.emit(
                     "tool.failed",
                     source="tool",
                     outcome="failed",
                     attributes={"callId": call.call_id, "errorCode": error.code},
                 )
-            await emit(
+            await writer.emit(
                 "run.failed",
                 source="app",
                 outcome="failed",
@@ -156,13 +139,13 @@ class LocalReadRunner:
         except Exception as error:
             normalized = ToolExecutionError("Tool execution failed")
             if tool_started:
-                await emit(
+                await writer.emit(
                     "tool.failed",
                     source="tool",
                     outcome="failed",
                     attributes={"callId": call.call_id, "errorCode": normalized.code},
                 )
-            await emit(
+            await writer.emit(
                 "run.failed",
                 source="app",
                 outcome="failed",

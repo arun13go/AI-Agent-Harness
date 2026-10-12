@@ -4,9 +4,9 @@ A reusable template for building governed, observable, and evaluable AI agents i
 Azure tenant. It composes Microsoft Agent Framework (MAF) Harness for execution and Microsoft
 Foundry for models, evaluation, and tracing instead of creating another agent runtime.
 
-> **Current status:** Phase 1A is complete. A governed local read path now proves configuration,
-> identity, tool authorization, execution limits, safe audit events, and normalized errors without
-> Azure. Approval-gated actions are next in Phase 1B.
+> **Current status:** Phase 1B is complete. Governed local read and action paths now prove identity,
+> approval binding, checkpoints, idempotency, replay safety, and privacy-safe audit events without
+> Azure. MAF and Foundry runtime integration are next in Phase 1C.
 
 ## Understand it in two minutes
 
@@ -34,6 +34,8 @@ ceilings.
   and telemetry.
 - A deterministic local CLI with a tenant-scoped read tool, code-owned registry, governance checks,
   and append-only in-memory audit.
+- A proposal tool and approval-gated sample action with checkpoints, expiry, exact proposal binding,
+  idempotency, and uncertain-outcome protection.
 - Architecture decisions for MAF, Foundry, Cosmos DB, Azure AI Search, deployment, and the reference
   model.
 - Deterministic schema and contract checks that require no Azure connection.
@@ -70,6 +72,19 @@ uv run agent-harness run `
 The result is labeled as untrusted tool output, while the four audit events record only identifiers,
 decisions, and lifecycle metadata.
 
+Run the Phase 1B approved action demo:
+
+```powershell
+uv run agent-harness action-demo `
+  --profile config\profiles\action-agent.yaml `
+  --tenant tenant-0001 `
+  --subject subject-0001 `
+  --approver approver-0001 `
+  --decision approved
+```
+
+Use `--decision denied` to verify that no action effect occurs.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the supported workflow and dependency-update policy.
 
 ## Profiles
@@ -100,6 +115,7 @@ only when their first working Phase 1 artifacts are added.
 ## Where to go next
 
 - **New to the repository:** follow the [documentation reading paths](docs/README.md).
+- **New to the code:** follow the [developer code tour](docs/getting-started/code-tour.md).
 - **Preparing a contribution:** read [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Understanding the design:** read the
   [reference architecture](docs/architecture/overview.md).
@@ -107,15 +123,14 @@ only when their first working Phase 1 artifacts are added.
   [implementation plan](docs/delivery/implementation-plan.md).
 - **Reviewing decisions:** browse the [ADRs](docs/decisions/).
 
-The next executable milestone is Phase 1B:
+The next executable milestone is Phase 1C:
 
 ```text
-typed action proposal
-  -> approval request
-  -> pause and checkpoint
-  -> approved resume
-  -> idempotent action
-  -> append-only audit
+released MAF Harness
+  -> Foundry model adapter
+  -> registered tool selection
+  -> existing read and action policy
+  -> correlated model and tool spans
 ```
 
 ## Product boundary

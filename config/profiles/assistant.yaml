@@ -9,6 +9,7 @@ runtime:
   timeoutSeconds: 120
 model:
   provider: foundry
+  projectEndpointEnv: FOUNDRY_PROJECT_ENDPOINT
   deploymentNameEnv: AZURE_AI_MODEL_DEPLOYMENT_NAME
 context:
   compaction: summarize

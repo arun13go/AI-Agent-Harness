@@ -49,6 +49,30 @@ class ToolExecutionError(HarnessError):
     code = "tool_execution_error"
 
 
+class ModelError(HarnessError):
+    code = "model_error"
+
+
+class ModelAuthenticationError(ModelError):
+    code = "model_authentication_error"
+
+
+class ModelInvalidRequestError(ModelError):
+    code = "model_invalid_request"
+
+
+class ModelContentFilterError(ModelError):
+    code = "model_content_filter"
+
+
+class ModelTimeoutError(ModelError):
+    code = "model_timeout"
+
+
+class ModelProviderError(ModelError):
+    code = "model_provider_error"
+
+
 class ActionLifecycleError(HarnessError):
     code = "action_lifecycle_error"
 

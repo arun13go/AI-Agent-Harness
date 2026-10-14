@@ -23,7 +23,7 @@ adapter expectations.
 | 0 | Tooling, schemas, contracts, and decisions | Complete |
 | 1A | Governance and read path foundation | Complete |
 | 1B | Approval and action lifecycle | Complete |
-| 1C | MAF and Foundry runtime integration | Not started |
+| 1C | MAF and Foundry runtime integration | In progress |
 | 1D | Azure Dev deployment | Not started |
 | 2 | Grounded-assistant profile | Not started |
 | 3 | Durable Azure adapters | Not started |
@@ -263,8 +263,11 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 ## Current Next Step
 
-Start **Phase 1A**. Do not begin MAF, Foundry, or Azure deployment work until the local read path and
-its deterministic governance tests pass.
+Continue **Phase 1C**. Deterministic MAF composition, governed registered-tool invocation,
+source-label propagation, normalized model failures, cancellation audit, trace correlation, the
+passwordless Foundry client factory, and the live CLI path are implemented. Complete streaming
+conformance, a real Foundry invocation, and VS Code Agent Inspector evidence before marking Phase
+1C complete or beginning Phase 1D deployment.
 
 Tool versions and upgrade policy are in the
 [toolchain policy](../getting-started/toolchain.md).

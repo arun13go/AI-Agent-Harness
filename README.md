@@ -4,9 +4,10 @@ A reusable template for building governed, observable, and evaluable AI agents i
 Azure tenant. It composes Microsoft Agent Framework (MAF) Harness for execution and Microsoft
 Foundry for models, evaluation, and tracing instead of creating another agent runtime.
 
-> **Current status:** Phase 1B is complete. Governed local read and action paths now prove identity,
-> approval binding, checkpoints, idempotency, replay safety, and privacy-safe audit events without
-> Azure. MAF and Foundry runtime integration are next in Phase 1C.
+> **Current status:** Phase 1B is complete and Phase 1C is in progress. Deterministic MAF
+> composition now proves model-selected registered tools remain behind the existing governance
+> boundary, and a passwordless Foundry client factory plus live CLI path are available. Live
+> Foundry validation, streaming conformance, and Agent Inspector setup remain before Phase 1C exits.
 
 ## Understand it in two minutes
 
@@ -40,8 +41,9 @@ ceilings.
   model.
 - Deterministic schema and contract checks that require no Azure connection.
 
-The local runner intentionally has no model or Azure dependency. MAF and Foundry integration arrives
-in Phase 1C, followed by the deployable Azure Dev environment in Phase 1D.
+The deterministic local runners intentionally have no model or Azure dependency. The Phase 1C MAF
+tests use a scripted model client, while the live path uses Foundry through environment-resolved
+configuration. The deployable Azure Dev environment follows in Phase 1D.
 
 ## Quick start
 
@@ -85,15 +87,38 @@ uv run agent-harness action-demo `
 
 Use `--decision denied` to verify that no action effect occurs.
 
+Run the Phase 1C live MAF and Foundry path after setting the non-secret environment references:
+
+```powershell
+$env:FOUNDRY_PROJECT_ENDPOINT = "https://<account>.services.ai.azure.com/api/projects/<project>"
+$env:AZURE_AI_MODEL_DEPLOYMENT_NAME = "<deployment-name>"
+
+uv run agent-harness agent-run `
+  --profile config\profiles\assistant.yaml `
+  --tenant tenant-0001 `
+  --subject subject-0001 `
+  --prompt "Check the API service status."
+```
+
+Authentication uses `DefaultAzureCredential`; do not place credentials, endpoints, deployment
+names, tenant IDs, or subscription IDs in committed profiles.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the supported workflow and dependency-update policy.
 
 ## Profiles
 
-| Profile | Use it when |
-|---|---|
-| Assistant | The model can complete a bounded task from supplied content, general reasoning, or approved tools |
-| Grounded assistant | Answers must come from current authorized evidence with citations and an answerability check |
-| Action agent | The agent may propose or perform consequential actions with checkpoints, approval, and idempotency |
+A profile is a policy preset, not a separate executable. The current CLI supports these explicit
+profile and command pairings:
+
+| Profile | Current command | Status |
+|---|---|---|
+| Assistant | `run` | Deterministic read path; no Azure required |
+| Assistant | `agent-run` | Live MAF and Foundry read path |
+| Grounded assistant | None yet | Phase 2 will add retrieval, citations, and answerability |
+| Action agent | `action-demo` | Deterministic proposal, approval, and one-time action path |
+
+Unsupported pairings fail explicitly. The grounded profile cannot silently run without its
+required retrieval and answerability controls.
 
 Examples live under [`config/profiles/`](config/profiles/).
 
@@ -109,8 +134,8 @@ Examples live under [`config/profiles/`](config/profiles/).
 | [`docs/`](docs/) | Human documentation, decisions, delivery plan, and historical context |
 | [`AGENTS.md`](AGENTS.md) | Always-on instructions for AI coding agents, not human onboarding |
 
-Folders for runtime adapters, application entry points, evaluations, and infrastructure are created
-only when their first working Phase 1 artifacts are added.
+Folders for evaluations and infrastructure are created only when their first working artifacts are
+added.
 
 ## Where to go next
 
@@ -123,7 +148,7 @@ only when their first working Phase 1 artifacts are added.
   [implementation plan](docs/delivery/implementation-plan.md).
 - **Reviewing decisions:** browse the [ADRs](docs/decisions/).
 
-The next executable milestone is Phase 1C:
+The current executable milestone is Phase 1C:
 
 ```text
 released MAF Harness
@@ -132,6 +157,9 @@ released MAF Harness
   -> existing read and action policy
   -> correlated model and tool spans
 ```
+
+The deterministic composition and Foundry client factory are implemented. Live Foundry,
+streaming, and Agent Inspector evidence are still required before Phase 1C is complete.
 
 ## Product boundary
 

@@ -4,6 +4,9 @@
 
 Build a reusable, production-oriented agent harness template that customers can clone, configure, deploy to their Azure tenant, and extend without replacing its governance and evaluation controls.
 
+This project was built with the microsoft-foundry skill. Before working on or answering questions
+about Foundry agents, read the microsoft-foundry skill first.
+
 ## Architecture Rules
 
 - Use Microsoft Agent Framework (MAF) Harness as the first and reference runtime adapter. Compose released framework capabilities; do not create a competing agent runtime.

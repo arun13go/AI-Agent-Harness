@@ -70,6 +70,58 @@ class LocalReadRunner:
             max_tool_calls=self._config.runtime.max_tool_calls,
         )
         await writer.emit("run.started", source="app", outcome="started", attributes={})
+        try:
+            result = await self._execute_tool(
+                context=context,
+                call=call,
+                writer=writer,
+                budget=budget,
+            )
+            await writer.emit("run.completed", source="app", outcome="succeeded", attributes={})
+            return result
+        except HarnessError as error:
+            await writer.emit(
+                "run.failed",
+                source="app",
+                outcome="failed",
+                attributes={"errorCode": error.code},
+            )
+            raise
+
+    async def run_tool(
+        self,
+        *,
+        authenticated_identity: IdentityScope,
+        context: RequestContext,
+        call: ToolCall,
+        budget: ExecutionBudget,
+    ) -> ToolResult:
+        """Execute one governed tool inside a caller-owned run lifecycle."""
+
+        now = self._clock() if self._clock is not None else None
+        validate_request_context(authenticated_identity, context, now=now)
+        return await self._execute_tool(
+            context=context,
+            call=call,
+            writer=RunEventWriter(
+                context=context,
+                audit_sink=self._audit_sink,
+                clock=self._clock,
+                event_id_factory=self._event_id_factory,
+            ),
+            budget=budget,
+        )
+
+    async def _execute_tool(
+        self,
+        *,
+        context: RequestContext,
+        call: ToolCall,
+        writer: RunEventWriter,
+        budget: ExecutionBudget,
+    ) -> ToolResult:
+        """Execute a validated tool and emit only its lifecycle events."""
+
         tool_started = False
         try:
             budget.consume_step()
@@ -119,7 +171,6 @@ class LocalReadRunner:
                     "riskTier": tool.definition.risk_tier.value,
                 },
             )
-            await writer.emit("run.completed", source="app", outcome="succeeded", attributes={})
             return result
         except HarnessError as error:
             if tool_started:
@@ -129,12 +180,6 @@ class LocalReadRunner:
                     outcome="failed",
                     attributes={"callId": call.call_id, "errorCode": error.code},
                 )
-            await writer.emit(
-                "run.failed",
-                source="app",
-                outcome="failed",
-                attributes={"errorCode": error.code},
-            )
             raise
         except Exception as error:
             normalized = ToolExecutionError("Tool execution failed")
@@ -145,10 +190,4 @@ class LocalReadRunner:
                     outcome="failed",
                     attributes={"callId": call.call_id, "errorCode": normalized.code},
                 )
-            await writer.emit(
-                "run.failed",
-                source="app",
-                outcome="failed",
-                attributes={"errorCode": normalized.code},
-            )
             raise normalized from error

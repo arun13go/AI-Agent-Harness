@@ -92,7 +92,8 @@ Evaluation and infrastructure folders are added only when their first working ar
 - **Phase 0:** complete and validated.
 - **Phase 1A and 1B:** complete and validated.
 - **Local runtime:** governed read and approval-gated action paths are available.
-- **Model runtime:** MAF and Foundry integration begins in Phase 1C.
+- **Model runtime:** Phase 1C is in progress with deterministic MAF composition and a live Foundry
+  client path; cloud validation, streaming, and Agent Inspector evidence remain.
 - **Azure deployment:** not yet available.
 
 Use the implementation plan status table as the source of truth for future capabilities.

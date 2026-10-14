@@ -44,6 +44,10 @@ class RuntimeConfig(HarnessModel):
 
 class ModelConfig(HarnessModel):
     provider: Literal["foundry"]
+    project_endpoint_env: str = Field(
+        alias="projectEndpointEnv",
+        pattern=r"^[A-Z][A-Z0-9_]*$",
+    )
     deployment_name_env: str = Field(alias="deploymentNameEnv", pattern=r"^[A-Z][A-Z0-9_]*$")
 
 

@@ -1,7 +1,7 @@
 # Developer Code Tour
 
 > **Audience:** developers new to the implementation  
-> **Scope:** Phase 1A read path and Phase 1B action path  
+> **Scope:** Phase 1A read path, Phase 1B action path, and the Phase 1C runtime slice
 > **Purpose:** show where code lives and how one request moves through it
 
 ## Mental Model
@@ -25,9 +25,15 @@ flowchart LR
 | `config/` | Valid profiles and versioned schemas |
 | `tests/` | Executable policy and lifecycle requirements |
 
-The current runners are deterministic and local. MAF and Foundry integration begins in Phase 1C.
+The local read and action runners remain deterministic. Phase 1C adds a deterministic MAF
+composition test and an environment-configured live Foundry path without making Azure a
+prerequisite for policy tests.
 
 ## Run It First
+
+The current CLI demonstrates two profile behaviors. The assistant profile has a deterministic
+read command and a live MAF/Foundry command. The action-agent profile has a deterministic approval
+demo. The grounded-assistant profile is configuration for Phase 2 and is not runnable yet.
 
 Read path:
 
@@ -74,78 +80,87 @@ Change the decision to `denied` to confirm that the effect count remains zero.
 | [`maintenance_request.py`](../../src/agent_harness/adapters/tools/maintenance_request.py) | Implements a proposal tool and an idempotent act-tier sample tool | Customer proposal and action tools |
 | [`in_memory_audit.py`](../../src/agent_harness/adapters/storage/in_memory_audit.py) | Validates and stores ordered audit events | Durable audit adapter |
 | [`in_memory_action.py`](../../src/agent_harness/adapters/storage/in_memory_action.py) | Stores proposals, artifacts, checkpoints, approvals, run state, and idempotency records | Azure adapters in Phase 3 |
+| [`maf/runtime.py`](../../src/agent_harness/adapters/maf/runtime.py) | Composes released MAF function invocation with code-owned registry, governance, limits, source labels, audit, and trace correlation | MAF runtime adapter |
+| [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py) | Resolves environment references and creates the passwordless, bounded Foundry chat client | Foundry model adapter |
 
-### Application
+## How Profiles Map to the Current Application
 
-| File | What it does |
-|---|---|
-| [`local_runner.py`](../../src/agent_harness/app/local_runner.py) | Runs one governed read tool and records its lifecycle |
-| [`action_runner.py`](../../src/agent_harness/app/action_runner.py) | Coordinates propose, decide, resume, execute-once, and failure handling |
-| [`cli.py`](../../src/agent_harness/app/cli.py) | Composes local dependencies for the `run` and `action-demo` commands |
+A **profile is a policy preset**, not a separate program. It sets limits and permitted
+capabilities. A **CLI command is a runnable demonstration** that chooses the tools and runners.
+The **runner** enforces the safety rules.
 
-## Read Path
+The repository contains three profiles, but it does not yet contain three complete runnable
+agents:
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant CLI
-    participant Runner as LocalReadRunner
-    participant Policy as Governance
-    participant Tool as ServiceStatusTool
-    participant Audit
+| Profile | Current command | Status | What it proves |
+|---|---|---|---|
+| [`assistant.yaml`](../../config/profiles/assistant.yaml) | `run` | Runnable without Azure | A read-only tool is checked, executed, and audited deterministically |
+| [`assistant.yaml`](../../config/profiles/assistant.yaml) | `agent-run` | Runnable when Foundry access is available | The Foundry model can request the same read tool through MAF, but the same checks still apply |
+| [`grounded-assistant.yaml`](../../config/profiles/grounded-assistant.yaml) | None yet | Planned for Phase 2 | Azure AI Search retrieval, citations, and answerability are not implemented yet |
+| [`action-agent.yaml`](../../config/profiles/action-agent.yaml) | `action-demo` | Runnable without Azure | An action cannot execute until its exact proposal is approved, and it executes at most once |
 
-    User->>CLI: run with profile and identity
-    CLI->>Runner: RequestContext + ToolCall
-    Runner->>Policy: Validate identity, tier, input, and limits
-    Runner->>Audit: run.started
-    Runner->>Tool: invoke()
-    Tool-->>Runner: Untrusted ToolResult
-    Runner->>Audit: tool.completed + run.completed
-    Runner-->>CLI: Result
-```
-
-Start with [`test_local_runner.py`](../../tests/app/test_local_runner.py) to see successful,
-unknown-tool, and cross-tenant examples.
-
-## Action Path
+The CLI rejects unsupported profile and command combinations. In particular, it rejects the
+grounded profile instead of silently producing an ungrounded answer.
 
 ```mermaid
-sequenceDiagram
-    participant Agent
-    participant Proposal as ProposalTool
-    participant Runner as ActionRunner
-    participant Stores
-    participant Approver
-    participant Action as ActTool
-    participant Audit
+flowchart LR
+    A[assistant profile] --> R[run]
+    A --> AR[agent-run]
+    R --> LR[read checks]
+    AR --> FM[MAF and Foundry]
+    FM --> LR
+    LR --> RT[read tool]
 
-    Agent->>Proposal: Proposed arguments
-    Proposal->>Runner: propose()
-    Runner->>Stores: Save artifact, proposal, state, checkpoint, approval
-    Runner->>Audit: proposed + approval requested + checkpoint
-    Runner-->>Agent: Waiting for approval
-    Approver->>Runner: decide()
-    Runner->>Stores: Save bound decision
-    Agent->>Runner: resume()
-    Runner->>Stores: Verify digest, state, approval, and idempotency
-    Runner->>Action: invoke(idempotency key)
-    Action-->>Runner: Created result
-    Runner->>Stores: Save terminal result
-    Runner->>Audit: completed
+    X[action-agent profile] --> AD[action-demo]
+    AD --> AL[proposal and approval checks]
+    AL --> AT[action tool]
+
+    G[grounded-assistant profile] -. Phase 2 .-> GR[retrieval and citations]
 ```
 
-The important separation is:
+### What Each Path Means
 
-```text
-Model or caller proposes
-Human approves
-Harness authorizes and resumes
-Act tool performs the effect once
-```
+**Read Path**
 
-[`test_action_runner.py`](../../tests/app/test_action_runner.py) demonstrates approval, denial,
-expiry, tenant isolation, changed proposals, stale checkpoints, replay, concurrency, and unknown
-outcomes.
+- Selected by `assistant.yaml + run`.
+- Calls a known read-only tool directly; no AI model is involved.
+- Exists so identity, permission, input, limits, and audit behavior can be tested quickly and
+  deterministically.
+
+**MAF and Foundry Path**
+
+- Selected by `assistant.yaml + agent-run`.
+- MAF is the agent runtime library that manages the conversation and tool-request loop.
+- Foundry hosts the AI model that answers the question or requests an allowed tool.
+- If the model requests a tool, the request enters the same Read Path checks before execution.
+- Exists to prove that adding an AI model does not bypass the deterministic safety controls.
+
+**Action Path**
+
+- Selected by `action-agent.yaml + action-demo`.
+- Handles a state-changing tool through proposal, human decision, and one-time execution.
+- Exists because a permission check alone is not enough for consequential actions: the exact
+  change must be approved, unchanged, unexpired, and protected from duplicate execution.
+
+The grounded path does not exist yet. `grounded-assistant.yaml` describes the required Phase 2
+policy, but retrieval, citations, and answerability must be implemented before that profile can
+run.
+
+### Files Used by Each Path
+
+| Path | Main files | Responsibility |
+|---|---|---|
+| Read Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`local_runner.py`](../../src/agent_harness/app/local_runner.py), [`service_status.py`](../../src/agent_harness/adapters/tools/service_status.py) | The CLI selects the assistant profile, the runner enforces read checks, and the sample tool returns tenant-scoped data |
+| MAF and Foundry Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`maf/runtime.py`](../../src/agent_harness/adapters/maf/runtime.py), [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py), [`local_runner.py`](../../src/agent_harness/app/local_runner.py) | The CLI creates the live client, MAF manages model interaction, Foundry supplies the model, and read-tool requests still use the governed runner |
+| Action Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`action_runner.py`](../../src/agent_harness/app/action_runner.py), [`maintenance_request.py`](../../src/agent_harness/adapters/tools/maintenance_request.py), [`in_memory_action.py`](../../src/agent_harness/adapters/storage/in_memory_action.py) | The CLI starts the demo, the runner manages proposal/decision/resume, the tool performs the approved effect, and storage retains lifecycle state |
+
+The application files are reusable safety mechanisms, not one file per profile.
+
+For action execution, `propose` saves the exact requested change, `decide` only records the
+approver's decision, and `resume` verifies that approval before executing once. See
+[`test_local_runner.py`](../../tests/app/test_local_runner.py),
+[`test_runtime.py`](../../tests/adapters/maf/test_runtime.py), and
+[`test_action_runner.py`](../../tests/app/test_action_runner.py) for the executable behavior.
 
 ## Configuration Flow
 
@@ -153,8 +168,9 @@ outcomes.
 2. [`configuration.py`](../../src/agent_harness/core/configuration.py) validates it against
    [`harness.schema.json`](../../config/schema/v1/harness.schema.json).
 3. Typed settings select limits and permission tier.
-4. Code registers known tools and adapters.
-5. Unknown names or invalid settings fail before execution.
+4. The CLI verifies that the command supports the selected profile.
+5. Code registers known tools and adapters.
+6. Unknown names, unsupported pairings, or invalid settings fail before execution.
 
 Example profiles:
 
@@ -187,6 +203,8 @@ controls.
 | [`test_local_runner.py`](../../tests/app/test_local_runner.py) | Read lifecycle |
 | [`test_action_runner.py`](../../tests/app/test_action_runner.py) | Approval and action lifecycle |
 | [`test_cli.py`](../../tests/app/test_cli.py) | Application composition |
+| [`test_runtime.py`](../../tests/adapters/maf/test_runtime.py) | MAF tool selection, source labels, trace correlation, failure normalization, cancellation, and act-tier fail-closed behavior |
+| [`test_model_client.py`](../../tests/adapters/foundry/test_model_client.py) | Foundry environment validation and code-owned invocation ceilings |
 | [`test_schemas.py`](../../tests/schema/test_schemas.py) | Configuration or event schemas |
 
 ## Common Extension Paths

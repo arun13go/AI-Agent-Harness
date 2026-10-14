@@ -53,10 +53,15 @@
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["provider", "deploymentNameEnv"],
+      "required": ["provider", "projectEndpointEnv", "deploymentNameEnv"],
       "properties": {
         "provider": {
           "const": "foundry"
+        },
+        "projectEndpointEnv": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "default": "FOUNDRY_PROJECT_ENDPOINT"
         },
         "deploymentNameEnv": {
           "type": "string",

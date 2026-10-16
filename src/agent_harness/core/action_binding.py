@@ -1,4 +1,4 @@
-"""Create stable proposal and idempotency bindings for action execution."""
+"""Bind approvals and idempotency keys to exact action proposals."""
 
 from __future__ import annotations
 

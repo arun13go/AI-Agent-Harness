@@ -10,7 +10,7 @@ from typing import cast
 
 import pytest
 
-from agent_harness.adapters.storage.in_memory_action import (
+from agent_harness.adapters.storage.in_memory_action_stores import (
     InMemoryApprovalProvider,
     InMemoryArtifactStore,
     InMemoryCheckpointStore,
@@ -23,7 +23,7 @@ from agent_harness.adapters.tools.maintenance_request import (
     MaintenanceProposalTool,
     MaintenanceRequestTool,
 )
-from agent_harness.app.action_runner import ActionRunner
+from agent_harness.app.action_lifecycle import ActionLifecycle
 from agent_harness.core.configuration import load_harness_config
 from agent_harness.core.contracts import Tool
 from agent_harness.core.errors import (
@@ -65,7 +65,7 @@ class MutableClock:
 class ActionSystem:
     """Group the action runner and observable test adapters."""
 
-    runner: ActionRunner
+    runner: ActionLifecycle
     tool: MaintenanceRequestTool
     artifacts: InMemoryArtifactStore
     proposals: InMemoryProposalStore
@@ -104,7 +104,7 @@ def build_system(
         deadline=clock() + timedelta(hours=1),
     )
     run_states = InMemoryRunStateStore()
-    runner = ActionRunner(
+    runner = ActionLifecycle(
         config=config,
         tools=tools,
         artifacts=artifacts,

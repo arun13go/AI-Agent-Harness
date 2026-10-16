@@ -38,6 +38,8 @@ strings, or generated credentials.
 - Keep the source-file count low: extend a cohesive module before adding another file.
 - Add a file only for a clear responsibility or architecture boundary; avoid both tiny wrappers and
   oversized modules with unrelated concerns.
+- Name modules `<domain>_<responsibility>.py`; avoid ambiguous `runtime`, `runner`, `manager`, or
+  `helper` names.
 - Update the [developer code tour](docs/getting-started/code-tour.md) when adding a major runtime
   path, adapter boundary, or application entry point.
 

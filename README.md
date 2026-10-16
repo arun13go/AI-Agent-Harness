@@ -4,10 +4,10 @@ A reusable template for building governed, observable, and evaluable AI agents i
 Azure tenant. It composes Microsoft Agent Framework (MAF) Harness for execution and Microsoft
 Foundry for models, evaluation, and tracing instead of creating another agent runtime.
 
-> **Current status:** Phase 1B is complete and Phase 1C is in progress. Deterministic MAF
-> composition now proves model-selected registered tools remain behind the existing governance
-> boundary, and a passwordless Foundry client factory plus live CLI path are available. Live
-> Foundry validation, streaming conformance, and Agent Inspector setup remain before Phase 1C exits.
+> **Current status:** Phase 1C is complete with an approved live-test model exception. The governed
+> MAF-to-Foundry CLI selected a registered tool with correlated model and tool traces; streaming
+> conformance also passes. The proof used `gpt-5-mini` because reference-model quota was unavailable.
+> Phase 1D adds Azure application deployment, the supported HTTP host, and Agent Inspector.
 
 ## Understand it in two minutes
 
@@ -148,7 +148,7 @@ added.
   [implementation plan](docs/delivery/implementation-plan.md).
 - **Reviewing decisions:** browse the [ADRs](docs/decisions/).
 
-The current executable milestone is Phase 1C:
+The completed Phase 1C runtime path is:
 
 ```text
 released MAF Harness
@@ -158,8 +158,10 @@ released MAF Harness
   -> correlated model and tool spans
 ```
 
-The deterministic composition and Foundry client factory are implemented. Live Foundry,
-streaming, and Agent Inspector evidence are still required before Phase 1C is complete.
+The live proof on 16 October 2026 selected `get_service_status`, returned the sample API status, and
+emitted six audit events with correlated model and tool spans. It used the approved `gpt-5-mini`
+exception; reference-model validation remains quota-blocked. Next is Phase 1D: deploy the application
+and add the HTTP-hosted Agent Inspector path.
 
 ## Product boundary
 

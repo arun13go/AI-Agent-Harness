@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import uuid4
 
-from agent_harness.core.action import idempotency_key, proposal_digest
+from agent_harness.core.action_binding import idempotency_key, proposal_digest
 from agent_harness.core.configuration import HarnessConfig
 from agent_harness.core.contracts import (
     ApprovalProvider,
@@ -28,7 +28,7 @@ from agent_harness.core.errors import (
     ApprovalError,
     HarnessError,
 )
-from agent_harness.core.events import RunEventWriter
+from agent_harness.core.event_writer import RunEventWriter
 from agent_harness.core.governance import (
     authorize_tool,
     validate_identity_scope,
@@ -57,7 +57,7 @@ from agent_harness.core.types import (
 )
 
 
-class ActionRunner:
+class ActionLifecycle:
     """Enforce approval binding and exactly-once action coordination."""
 
     def __init__(

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
-from agent_harness.core.events import RunEventWriter
+from agent_harness.core.event_writer import RunEventWriter
 from agent_harness.core.types import IdentityScope, RequestContext
 
 ROOT = Path(__file__).parents[2]

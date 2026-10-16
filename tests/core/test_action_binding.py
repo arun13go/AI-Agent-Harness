@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from agent_harness.core.action import idempotency_key, proposal_digest
+from agent_harness.core.action_binding import idempotency_key, proposal_digest
 from agent_harness.core.types import ActionProposal, IdentityScope, RequestContext
 
 

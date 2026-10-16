@@ -1,4 +1,4 @@
-"""Provide concurrency-safe in-memory stores for the action lifecycle."""
+"""Store action-lifecycle records in concurrency-safe memory adapters."""
 
 from __future__ import annotations
 

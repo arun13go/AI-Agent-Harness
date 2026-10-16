@@ -23,7 +23,7 @@ adapter expectations.
 | 0 | Tooling, schemas, contracts, and decisions | Complete |
 | 1A | Governance and read path foundation | Complete |
 | 1B | Approval and action lifecycle | Complete |
-| 1C | MAF and Foundry runtime integration | In progress |
+| 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Not started |
 | 2 | Grounded-assistant profile | Not started |
 | 3 | Durable Azure adapters | Not started |
@@ -207,7 +207,7 @@ cross-tenant, mutation, replay, concurrency, and uncertain-outcome tests pass wi
 
 - Released MAF Harness composition around the Phase 1A and 1B policy envelope.
 - Foundry model adapter with streaming, usage, cancellation, and normalized provider errors.
-- Bounded conversation history, source labels, tracing, and VS Code Agent Inspector configuration.
+- Bounded conversation history, source labels, and tracing.
 
 **Pattern focus:** [MEM-02](pattern-catalog.md#mem-02),
 [CTX-01](pattern-catalog.md#ctx-01), [CTX-02](pattern-catalog.md#ctx-02),
@@ -216,6 +216,17 @@ cross-tenant, mutation, replay, concurrency, and uncertain-outcome tests pass wi
 **Exit:** the reference model selects a registered tool through MAF; governance remains code-owned;
 model and tool spans share run correlation.
 
+**Evidence (16 October 2026):** the live passwordless CLI selected `get_service_status`, returned
+the sample API's healthy status, emitted six audit events, and produced model, tool, and agent spans
+sharing one trace ID. The full local suite passed: 56 tests, Pyright, and Ruff. Metadata-only trace
+evidence is retained under ignored `.local/logs/phase1c-live-trace.json`.
+
+**Approved exit exception:** the proof used `gpt-5-mini` version `2025-08-07`, GlobalStandard
+capacity 1, because quota for the `gpt-5.4-mini` reference baseline was unavailable. This closes the
+runtime integration milestone, not reference-model certification. Repeat the live proof with the
+[reference model](../decisions/0008-gpt-5-4-mini-reference-model.md) when quota is available.
+Application Insights export and managed-identity hosting remain Phase 1D work.
+
 ### Phase 1D: Azure Dev Deployment
 
 **Build**
@@ -223,6 +234,7 @@ model and tool spans share run correlation.
 - Preflight for tools, authentication, providers, model availability, and quota.
 - Minimal `azure.yaml` and canonical Bicep for hosting, managed identity, Foundry, RBAC, and
   Application Insights.
+- Supported Responses HTTP host plus VS Code Agent Inspector configuration and evidence.
 - An initial generated **Deploy to Azure** artifact plus cloud smoke and trace checks.
 
 **Pattern focus:** [SEC-01](pattern-catalog.md#sec-01),
@@ -263,11 +275,13 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 ## Current Next Step
 
-Continue **Phase 1C**. Deterministic MAF composition, governed registered-tool invocation,
+Begin **Phase 1D**. Deterministic MAF composition, governed registered-tool invocation,
 source-label propagation, normalized model failures, cancellation audit, trace correlation, the
-passwordless Foundry client factory, and the live CLI path are implemented. Complete streaming
-conformance, a real Foundry invocation, and VS Code Agent Inspector evidence before marking Phase
-1C complete or beginning Phase 1D deployment.
+passwordless Foundry client factory, the live CLI path, and streaming conformance are implemented.
+Live Foundry tool invocation and correlated spans are now proven with the approved model exception
+above. Build the supported HTTP host and repeatable Azure deployment, then add the
+VS Code Agent Inspector path, as recorded in
+[ADR 0009](../decisions/0009-defer-agent-inspector-to-http-host.md).
 
 Tool versions and upgrade policy are in the
 [toolchain policy](../getting-started/toolchain.md).

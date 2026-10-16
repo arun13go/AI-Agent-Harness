@@ -1,4 +1,4 @@
-"""Run one governed local read call through registered tools and audit."""
+"""Execute governed read tools through registered policy and audit."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from agent_harness.core.errors import (
     HarnessError,
     ToolExecutionError,
 )
-from agent_harness.core.events import RunEventWriter
+from agent_harness.core.event_writer import RunEventWriter
 from agent_harness.core.governance import (
     ExecutionBudget,
     authorize_tool,
@@ -30,7 +30,7 @@ from agent_harness.core.types import (
 )
 
 
-class LocalReadRunner:
+class ReadToolExecutor:
     """Coordinate validation, tool execution, limits, and lifecycle events."""
 
     def __init__(

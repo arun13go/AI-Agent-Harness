@@ -69,8 +69,8 @@ Change the decision to `denied` to confirm that the effect count remains zero.
 | [`registry.py`](../../src/agent_harness/core/registry.py) | Resolves trusted implementations by explicit name; rejects unknown or duplicate names | Read and action runners |
 | [`governance.py`](../../src/agent_harness/core/governance.py) | Checks identity, deadline, permission tier, tool input, and execution limits | Read and action runners |
 | [`errors.py`](../../src/agent_harness/core/errors.py) | Provides stable error codes across configuration, policy, audit, and actions | All runtime layers |
-| [`action.py`](../../src/agent_harness/core/action.py) | Hashes the exact proposal and derives its idempotency key | Action runner |
-| [`events.py`](../../src/agent_harness/core/events.py) | Builds correlated lifecycle events and asks the audit sink to append them in order | Read and action runners |
+| [`action_binding.py`](../../src/agent_harness/core/action_binding.py) | Hashes the exact proposal and derives its idempotency key | Action lifecycle |
+| [`event_writer.py`](../../src/agent_harness/core/event_writer.py) | Builds correlated lifecycle events and asks the audit sink to append them in order | Read, action, and MAF executors |
 
 ### Adapters
 
@@ -79,8 +79,8 @@ Change the decision to `denied` to confirm that the effect count remains zero.
 | [`service_status.py`](../../src/agent_harness/adapters/tools/service_status.py) | Implements the deterministic tenant-scoped read tool | Customer read tools |
 | [`maintenance_request.py`](../../src/agent_harness/adapters/tools/maintenance_request.py) | Implements a proposal tool and an idempotent act-tier sample tool | Customer proposal and action tools |
 | [`in_memory_audit.py`](../../src/agent_harness/adapters/storage/in_memory_audit.py) | Validates and stores ordered audit events | Durable audit adapter |
-| [`in_memory_action.py`](../../src/agent_harness/adapters/storage/in_memory_action.py) | Stores proposals, artifacts, checkpoints, approvals, run state, and idempotency records | Azure adapters in Phase 3 |
-| [`maf/runtime.py`](../../src/agent_harness/adapters/maf/runtime.py) | Composes released MAF function invocation with code-owned registry, governance, limits, source labels, audit, and trace correlation | MAF runtime adapter |
+| [`in_memory_action_stores.py`](../../src/agent_harness/adapters/storage/in_memory_action_stores.py) | Stores proposals, artifacts, checkpoints, approvals, run state, and idempotency records | Azure adapters in Phase 3 |
+| [`maf/agent_executor.py`](../../src/agent_harness/adapters/maf/agent_executor.py) | Executes released MAF agents with code-owned registry, governance, limits, source labels, audit, and trace correlation | MAF runtime adapter |
 | [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py) | Resolves environment references and creates the passwordless, bounded Foundry chat client | Foundry model adapter |
 
 ## How Profiles Map to the Current Application
@@ -150,17 +150,17 @@ run.
 
 | Path | Main files | Responsibility |
 |---|---|---|
-| Read Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`local_runner.py`](../../src/agent_harness/app/local_runner.py), [`service_status.py`](../../src/agent_harness/adapters/tools/service_status.py) | The CLI selects the assistant profile, the runner enforces read checks, and the sample tool returns tenant-scoped data |
-| MAF and Foundry Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`maf/runtime.py`](../../src/agent_harness/adapters/maf/runtime.py), [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py), [`local_runner.py`](../../src/agent_harness/app/local_runner.py) | The CLI creates the live client, MAF manages model interaction, Foundry supplies the model, and read-tool requests still use the governed runner |
-| Action Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`action_runner.py`](../../src/agent_harness/app/action_runner.py), [`maintenance_request.py`](../../src/agent_harness/adapters/tools/maintenance_request.py), [`in_memory_action.py`](../../src/agent_harness/adapters/storage/in_memory_action.py) | The CLI starts the demo, the runner manages proposal/decision/resume, the tool performs the approved effect, and storage retains lifecycle state |
+| Read Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`read_executor.py`](../../src/agent_harness/app/read_executor.py), [`service_status.py`](../../src/agent_harness/adapters/tools/service_status.py) | The CLI selects the assistant profile, the executor enforces read checks, and the sample tool returns tenant-scoped data |
+| MAF and Foundry Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`maf/agent_executor.py`](../../src/agent_harness/adapters/maf/agent_executor.py), [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py), [`read_executor.py`](../../src/agent_harness/app/read_executor.py) | The CLI creates the live client, MAF manages model interaction, Foundry supplies the model, and read-tool requests still use the governed executor |
+| Action Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`action_lifecycle.py`](../../src/agent_harness/app/action_lifecycle.py), [`maintenance_request.py`](../../src/agent_harness/adapters/tools/maintenance_request.py), [`in_memory_action_stores.py`](../../src/agent_harness/adapters/storage/in_memory_action_stores.py) | The CLI starts the demo, the lifecycle coordinates proposal/decision/resume, the tool performs the approved effect, and storage retains lifecycle state |
 
 The application files are reusable safety mechanisms, not one file per profile.
 
 For action execution, `propose` saves the exact requested change, `decide` only records the
 approver's decision, and `resume` verifies that approval before executing once. See
-[`test_local_runner.py`](../../tests/app/test_local_runner.py),
-[`test_runtime.py`](../../tests/adapters/maf/test_runtime.py), and
-[`test_action_runner.py`](../../tests/app/test_action_runner.py) for the executable behavior.
+[`test_read_executor.py`](../../tests/app/test_read_executor.py),
+[`test_agent_executor.py`](../../tests/adapters/maf/test_agent_executor.py), and
+[`test_action_lifecycle.py`](../../tests/app/test_action_lifecycle.py) for the executable behavior.
 
 ## Configuration Flow
 
@@ -198,12 +198,12 @@ controls.
 |---|---|
 | [`test_configuration.py`](../../tests/core/test_configuration.py) | Profile loading |
 | [`test_governance.py`](../../tests/core/test_governance.py) | Identity, tiers, limits, or audit policy |
-| [`test_events.py`](../../tests/core/test_events.py) | Event ordering or concurrency |
-| [`test_action.py`](../../tests/core/test_action.py) | Proposal hashes or idempotency keys |
-| [`test_local_runner.py`](../../tests/app/test_local_runner.py) | Read lifecycle |
-| [`test_action_runner.py`](../../tests/app/test_action_runner.py) | Approval and action lifecycle |
+| [`test_event_writer.py`](../../tests/core/test_event_writer.py) | Event ordering or concurrency |
+| [`test_action_binding.py`](../../tests/core/test_action_binding.py) | Proposal hashes or idempotency keys |
+| [`test_read_executor.py`](../../tests/app/test_read_executor.py) | Read lifecycle |
+| [`test_action_lifecycle.py`](../../tests/app/test_action_lifecycle.py) | Approval and action lifecycle |
 | [`test_cli.py`](../../tests/app/test_cli.py) | Application composition |
-| [`test_runtime.py`](../../tests/adapters/maf/test_runtime.py) | MAF tool selection, source labels, trace correlation, failure normalization, cancellation, and act-tier fail-closed behavior |
+| [`test_agent_executor.py`](../../tests/adapters/maf/test_agent_executor.py) | MAF tool selection, source labels, trace correlation, failure normalization, cancellation, and act-tier fail-closed behavior |
 | [`test_model_client.py`](../../tests/adapters/foundry/test_model_client.py) | Foundry environment validation and code-owned invocation ceilings |
 | [`test_schemas.py`](../../tests/schema/test_schemas.py) | Configuration or event schemas |
 
@@ -218,7 +218,7 @@ controls.
 ### Add an action tool
 
 1. Implement separate propose-tier and act-tier surfaces.
-2. Route proposals through `ActionRunner`.
+2. Route proposals through `ActionLifecycle`.
 3. Require the supplied idempotency key in the act tool.
 4. Test denial, expiry, mutation, replay, concurrency, and unknown outcomes.
 

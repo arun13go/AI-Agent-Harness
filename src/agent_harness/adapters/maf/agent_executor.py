@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from hashlib import sha256
 from typing import cast
@@ -14,12 +14,15 @@ from agent_framework import (
     Agent,
     AgentFrameworkException,
     AgentResponse,
+    AgentResponseUpdate,
     CharacterEstimatorTokenizer,
     ChatOptions,
     ChatResponse,
+    ChatResponseUpdate,
     FunctionInvocationContext,
     FunctionTool,
     MiddlewareFailure,
+    ResponseStream,
     SupportsChatGetResponse,
     TruncationStrategy,
 )
@@ -39,7 +42,7 @@ from opentelemetry.trace import (
     TraceState,
 )
 
-from agent_harness.app.local_runner import LocalReadRunner
+from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.core.configuration import HarnessConfig
 from agent_harness.core.contracts import AuditSink, Tool
 from agent_harness.core.errors import (
@@ -51,7 +54,7 @@ from agent_harness.core.errors import (
     ModelProviderError,
     ModelTimeoutError,
 )
-from agent_harness.core.events import RunEventWriter
+from agent_harness.core.event_writer import RunEventWriter
 from agent_harness.core.governance import ExecutionBudget, validate_request_context
 from agent_harness.core.registry import Registry
 from agent_harness.core.types import (
@@ -75,7 +78,7 @@ _MANDATORY_INSTRUCTIONS = (
 _ALLOWED_MESSAGE_ROLES = {"system", "user", "assistant", "tool"}
 
 
-class MafRuntime:
+class MafAgentExecutor:
     """Run one bounded MAF agent request through governed registered tools."""
 
     def __init__(
@@ -105,69 +108,12 @@ class MafRuntime:
     ) -> ModelResponse:
         """Run MAF with bounded history, governed tools, and correlated events."""
 
-        context = request.context
-        now = self._clock() if self._clock is not None else None
-        validate_request_context(authenticated_identity, context, now=now)
-        self._validate_tool_declarations(request)
-        instructions, messages = self._convert_messages(request.messages)
-        writer = RunEventWriter(
-            context=context,
-            audit_sink=self._audit_sink,
-            clock=self._clock,
-            event_id_factory=self._event_id_factory,
+        context, writer, agent, messages, timeout_seconds = self._prepare_execution(
+            authenticated_identity=authenticated_identity,
+            request=request,
         )
-        budget = ExecutionBudget(
-            max_steps=self._config.runtime.max_steps,
-            max_tool_calls=self._config.runtime.max_tool_calls,
-        )
-        read_runner = LocalReadRunner(
-            config=self._config,
-            tools=self._tools,
-            audit_sink=self._audit_sink,
-            clock=self._clock,
-            event_id_factory=self._event_id_factory,
-        )
-        maf_tools = [
-            self._make_function_tool(
-                tool=tool,
-                authenticated_identity=authenticated_identity,
-                context=context,
-                runner=read_runner,
-                budget=budget,
-            )
-            for _, tool in self._tools
-        ]
-        agent = Agent(
-            client=self._client,
-            instructions=self._compose_instructions(instructions),
-            name="agent-harness",
-            tools=maf_tools,
-            compaction_strategy=TruncationStrategy(
-                max_n=self._config.context.max_input_tokens,
-                compact_to=max(1, self._config.context.max_input_tokens * 4 // 5),
-                tokenizer=CharacterEstimatorTokenizer(),
-            ),
-            tokenizer=CharacterEstimatorTokenizer(),
-        )
-
-        await writer.emit("run.started", source="maf-runtime", outcome="started", attributes={})
-        await writer.emit(
-            "model.requested",
-            source="model",
-            outcome="started",
-            attributes={
-                "inputItemCount": len(request.messages),
-                "toolCount": len(maf_tools),
-            },
-        )
+        await self._emit_started(writer, request=request)
         try:
-            current_time = self._clock() if self._clock is not None else datetime.now(
-                context.deadline.tzinfo
-            )
-            timeout_seconds = min(
-                float(self._config.runtime.timeout_seconds),
-                (context.deadline - current_time).total_seconds(),
-            )
             async with asyncio.timeout(timeout_seconds):
                 with trace.use_span(self._parent_span(context.trace_id, context.run_id)):
                     response = cast(
@@ -198,6 +144,154 @@ class MafRuntime:
             await self._emit_failure(writer, error_code=normalized.code, outcome="failed")
             raise normalized from error
 
+        await self._emit_completed(writer, result=result)
+        return result
+
+    async def stream(
+        self,
+        *,
+        authenticated_identity: IdentityScope,
+        request: ModelRequest,
+    ) -> AsyncIterator[ModelResponse]:
+        """Stream ordered text deltas and one terminal metadata response."""
+
+        context, writer, agent, messages, timeout_seconds = self._prepare_execution(
+            authenticated_identity=authenticated_identity,
+            request=request,
+        )
+        await self._emit_started(writer, request=request)
+        try:
+            async with asyncio.timeout(timeout_seconds):
+                with trace.use_span(self._parent_span(context.trace_id, context.run_id)):
+                    response_stream = cast(
+                        ResponseStream[AgentResponseUpdate, AgentResponse[None]],
+                        agent.run(
+                            messages,
+                            stream=True,
+                            options={"max_tokens": request.max_output_tokens},
+                        ),
+                    )
+                    async for update in response_stream:
+                        if update.text:
+                            yield ModelResponse(
+                                message=Message("assistant", update.text, "model-output"),
+                                tool_calls=(),
+                                usage=TokenUsage(input_tokens=0, output_tokens=0),
+                                model_id="unknown",
+                                finish_reason="streaming",
+                            )
+                    result = self._to_model_response(await response_stream.get_final_response())
+        except asyncio.CancelledError:
+            await self._emit_failure(writer, error_code="model_cancelled", outcome="cancelled")
+            raise
+        except MiddlewareFailure as error:
+            governed_error = error.__cause__
+            if isinstance(governed_error, HarnessError):
+                await self._emit_failure(
+                    writer,
+                    error_code=governed_error.code,
+                    outcome="failed",
+                )
+                raise governed_error from error
+            normalized = ModelProviderError("MAF middleware terminated the model stream")
+            await self._emit_failure(writer, error_code=normalized.code, outcome="failed")
+            raise normalized from error
+        except Exception as error:
+            normalized = _normalize_model_error(error)
+            await self._emit_failure(writer, error_code=normalized.code, outcome="failed")
+            raise normalized from error
+
+        await self._emit_completed(writer, result=result)
+        yield ModelResponse(
+            message=None,
+            tool_calls=(),
+            usage=result.usage,
+            model_id=result.model_id,
+            finish_reason=result.finish_reason,
+        )
+
+    def _prepare_execution(
+        self,
+        *,
+        authenticated_identity: IdentityScope,
+        request: ModelRequest,
+    ) -> tuple[RequestContext, RunEventWriter, Agent, list[MafMessage], float]:
+        context = request.context
+        now = self._clock() if self._clock is not None else None
+        validate_request_context(authenticated_identity, context, now=now)
+        self._validate_tool_declarations(request)
+        instructions, messages = self._convert_messages(request.messages)
+        writer = RunEventWriter(
+            context=context,
+            audit_sink=self._audit_sink,
+            clock=self._clock,
+            event_id_factory=self._event_id_factory,
+        )
+        budget = ExecutionBudget(
+            max_steps=self._config.runtime.max_steps,
+            max_tool_calls=self._config.runtime.max_tool_calls,
+        )
+        read_runner = ReadToolExecutor(
+            config=self._config,
+            tools=self._tools,
+            audit_sink=self._audit_sink,
+            clock=self._clock,
+            event_id_factory=self._event_id_factory,
+        )
+        maf_tools = [
+            self._make_function_tool(
+                tool=tool,
+                authenticated_identity=authenticated_identity,
+                context=context,
+                runner=read_runner,
+                budget=budget,
+            )
+            for _, tool in self._tools
+        ]
+        agent = Agent(
+            client=self._client,
+            instructions=self._compose_instructions(instructions),
+            name="agent-harness",
+            tools=maf_tools,
+            compaction_strategy=TruncationStrategy(
+                max_n=self._config.context.max_input_tokens,
+                compact_to=max(1, self._config.context.max_input_tokens * 4 // 5),
+                tokenizer=CharacterEstimatorTokenizer(),
+            ),
+            tokenizer=CharacterEstimatorTokenizer(),
+        )
+        current_time = (
+            self._clock() if self._clock is not None else datetime.now(context.deadline.tzinfo)
+        )
+        timeout_seconds = min(
+            float(self._config.runtime.timeout_seconds),
+            (context.deadline - current_time).total_seconds(),
+        )
+        return context, writer, agent, messages, timeout_seconds
+
+    async def _emit_started(
+        self,
+        writer: RunEventWriter,
+        *,
+        request: ModelRequest,
+    ) -> None:
+        await writer.emit("run.started", source="maf-runtime", outcome="started", attributes={})
+        await writer.emit(
+            "model.requested",
+            source="model",
+            outcome="started",
+            attributes={
+                "inputItemCount": len(request.messages),
+                "toolCount": len(request.tools),
+            },
+        )
+
+    async def _emit_completed(
+        self,
+        writer: RunEventWriter,
+        *,
+        result: ModelResponse,
+    ) -> None:
         await writer.emit(
             "model.completed",
             source="model",
@@ -216,7 +310,6 @@ class MafRuntime:
             outcome="succeeded",
             attributes={},
         )
-        return result
 
     def _validate_tool_declarations(self, request: ModelRequest) -> None:
         registered = tuple(tool.definition for _, tool in self._tools)
@@ -225,9 +318,7 @@ class MafRuntime:
                 "Model request tool declarations must exactly match the code-owned registry"
             )
         act_tools = [
-            definition.name
-            for definition in registered
-            if definition.risk_tier is ToolRiskTier.ACT
+            definition.name for definition in registered if definition.risk_tier is ToolRiskTier.ACT
         ]
         if act_tools:
             raise InputValidationError(
@@ -284,7 +375,7 @@ class MafRuntime:
         tool: Tool,
         authenticated_identity: IdentityScope,
         context: RequestContext,
-        runner: LocalReadRunner,
+        runner: ReadToolExecutor,
         budget: ExecutionBudget,
     ) -> FunctionTool:
         async def invoke(
@@ -359,6 +450,16 @@ class MafRuntime:
         model_id = "unknown"
         if isinstance(raw_response, ChatResponse) and raw_response.model:
             model_id = raw_response.model
+        elif isinstance(raw_response, list):
+            raw_updates = cast(list[object], raw_response)
+            model_id = next(
+                (
+                    update.model
+                    for update in reversed(raw_updates)
+                    if isinstance(update, ChatResponseUpdate) and update.model
+                ),
+                "unknown",
+            )
         usage = response.usage_details or {}
         finish_reason = str(response.finish_reason or "unknown")
         message = None

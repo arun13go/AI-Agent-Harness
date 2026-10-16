@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Mapping, Sequence
+from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,8 +14,10 @@ from agent_framework import (
     BaseChatClient,
     ChatOptions,
     ChatResponse,
+    ChatResponseUpdate,
     Content,
     FunctionInvocationLayer,
+    ResponseStream,
 )
 from agent_framework import (
     Message as MafMessage,
@@ -23,7 +25,7 @@ from agent_framework import (
 from agent_framework.exceptions import ChatClientInvalidAuthException
 from opentelemetry import trace
 
-from agent_harness.adapters.maf.runtime import MafRuntime
+from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
 from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.adapters.tools.maintenance_request import MaintenanceRequestTool
 from agent_harness.adapters.tools.service_status import ServiceStatusTool
@@ -190,6 +192,47 @@ class BlockingClient(
         raise AssertionError("Blocking model request unexpectedly resumed")
 
 
+class ScriptedStreamingClient(
+    FunctionInvocationLayer[ChatOptions],
+    BaseChatClient[ChatOptions],
+):
+    """Stream deterministic text and usage updates in provider order."""
+
+    def __init__(self) -> None:
+        self.trace_ids: list[int] = []
+        super().__init__()
+
+    def _inner_get_response(
+        self,
+        *,
+        messages: Sequence[MafMessage],
+        stream: bool,
+        options: Mapping[str, Any],
+        **kwargs: Any,
+    ) -> ResponseStream[ChatResponseUpdate, ChatResponse[Any]]:
+        del messages, options, kwargs
+        if not stream:
+            raise AssertionError("This test requires the streaming path")
+        self.trace_ids.append(trace.get_current_span().get_span_context().trace_id)
+        return ResponseStream(self._updates(), finalizer=ChatResponse.from_updates)
+
+    async def _updates(self) -> AsyncIterator[ChatResponseUpdate]:
+        yield ChatResponseUpdate(
+            contents=[Content.from_text("API ")],
+            role="assistant",
+            model="fake-stream-model",
+        )
+        yield ChatResponseUpdate(
+            contents=[Content.from_text("is healthy.")],
+            model="fake-stream-model",
+        )
+        yield ChatResponseUpdate(
+            contents=[Content.from_usage({"input_token_count": 3, "output_token_count": 2})],
+            model="fake-stream-model",
+            finish_reason="stop",
+        )
+
+
 def make_context() -> RequestContext:
     """Build a valid request context for MAF composition."""
 
@@ -228,7 +271,7 @@ async def test_model_selects_registered_tool_through_governed_runner() -> None:
     tools.register("get_service_status", tracing_tool)
     audit = InMemoryAuditSink(EVENT_SCHEMA)
     client = ScriptedToolClient()
-    runtime = MafRuntime(
+    runtime = MafAgentExecutor(
         config=config,
         client=client,
         tools=tools,
@@ -261,6 +304,50 @@ async def test_model_selects_registered_tool_through_governed_runner() -> None:
 
 
 @pytest.mark.asyncio
+async def test_stream_preserves_order_and_emits_terminal_usage() -> None:
+    config = load_harness_config(
+        ROOT / "config" / "profiles" / "assistant.yaml",
+        CONFIG_SCHEMA,
+    )
+    tools = Registry[Tool]("tool")
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    client = ScriptedStreamingClient()
+    runtime = MafAgentExecutor(
+        config=config,
+        client=client,
+        tools=tools,
+        audit_sink=audit,
+    )
+    context = make_context()
+
+    responses = [
+        response
+        async for response in runtime.stream(
+            authenticated_identity=context.identity,
+            request=make_request(context, tools),
+        )
+    ]
+
+    assert [response.message.content for response in responses if response.message] == [
+        "API ",
+        "is healthy.",
+    ]
+    terminal = responses[-1]
+    assert terminal.message is None
+    assert terminal.model_id == "fake-stream-model"
+    assert terminal.finish_reason == "stop"
+    assert terminal.usage.input_tokens == 3
+    assert terminal.usage.output_tokens == 2
+    assert [event.event_type for event in audit.events] == [
+        "run.started",
+        "model.requested",
+        "model.completed",
+        "run.completed",
+    ]
+    assert client.trace_ids == [int(context.trace_id, 16)]
+
+
+@pytest.mark.asyncio
 async def test_act_tier_tool_cannot_bypass_proposal_lifecycle() -> None:
     config = load_harness_config(
         ROOT / "config" / "profiles" / "action-agent.yaml",
@@ -270,7 +357,7 @@ async def test_act_tier_tool_cannot_bypass_proposal_lifecycle() -> None:
     tools.register("create_maintenance_request", MaintenanceRequestTool())
     audit = InMemoryAuditSink(EVENT_SCHEMA)
     context = make_context()
-    runtime = MafRuntime(
+    runtime = MafAgentExecutor(
         config=config,
         client=ScriptedToolClient(),
         tools=tools,
@@ -295,7 +382,7 @@ async def test_untrusted_system_content_cannot_become_instructions() -> None:
     tools = Registry[Tool]("tool")
     audit = InMemoryAuditSink(EVENT_SCHEMA)
     context = make_context()
-    runtime = MafRuntime(
+    runtime = MafAgentExecutor(
         config=config,
         client=ScriptedToolClient(),
         tools=tools,
@@ -325,7 +412,7 @@ async def test_model_authentication_error_is_normalized_and_audited() -> None:
     tools = Registry[Tool]("tool")
     audit = InMemoryAuditSink(EVENT_SCHEMA)
     context = make_context()
-    runtime = MafRuntime(
+    runtime = MafAgentExecutor(
         config=config,
         client=FailingClient(ChatClientInvalidAuthException("provider detail")),
         tools=tools,
@@ -357,7 +444,7 @@ async def test_model_cancellation_is_audited_and_propagated() -> None:
     audit = InMemoryAuditSink(EVENT_SCHEMA)
     context = make_context()
     client = BlockingClient()
-    runtime = MafRuntime(
+    runtime = MafAgentExecutor(
         config=config,
         client=client,
         tools=tools,
@@ -394,7 +481,7 @@ async def test_model_deadline_is_normalized_and_audited() -> None:
     tools = Registry[Tool]("tool")
     audit = InMemoryAuditSink(EVENT_SCHEMA)
     context = make_context()
-    runtime = MafRuntime(
+    runtime = MafAgentExecutor(
         config=config,
         client=BlockingClient(),
         tools=tools,

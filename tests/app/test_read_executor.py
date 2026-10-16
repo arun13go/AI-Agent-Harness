@@ -10,7 +10,7 @@ from agent_harness.adapters.storage.in_memory_audit import (
     run_event_to_dict,
 )
 from agent_harness.adapters.tools.service_status import ServiceStatusTool
-from agent_harness.app.local_runner import LocalReadRunner
+from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.core.configuration import load_harness_config
 from agent_harness.core.contracts import Tool
 from agent_harness.core.errors import AuthorizationError, UnknownRegistrationError
@@ -22,7 +22,7 @@ CONFIG_SCHEMA = ROOT / "config" / "schema" / "v1" / "harness.schema.json"
 EVENT_SCHEMA = ROOT / "config" / "schema" / "v1" / "run-event.schema.json"
 
 
-def make_runner(status: str = "healthy") -> tuple[LocalReadRunner, InMemoryAuditSink]:
+def make_runner(status: str = "healthy") -> tuple[ReadToolExecutor, InMemoryAuditSink]:
     """Build a local runner with deterministic tool data."""
 
     config = load_harness_config(ROOT / "config" / "profiles" / "assistant.yaml", CONFIG_SCHEMA)
@@ -32,7 +32,7 @@ def make_runner(status: str = "healthy") -> tuple[LocalReadRunner, InMemoryAudit
         ServiceStatusTool({"tenant-0001": {"api": status}}),
     )
     audit = InMemoryAuditSink(EVENT_SCHEMA)
-    return LocalReadRunner(config=config, tools=tools, audit_sink=audit), audit
+    return ReadToolExecutor(config=config, tools=tools, audit_sink=audit), audit
 
 
 def make_context() -> RequestContext:

@@ -66,9 +66,7 @@ async def test_foundry_client_enforces_runtime_ceilings() -> None:
     client = create_foundry_chat_client(
         config,
         environment={
-            "FOUNDRY_PROJECT_ENDPOINT": (
-                "https://example.services.ai.azure.com/api/projects/test"
-            ),
+            "FOUNDRY_PROJECT_ENDPOINT": ("https://example.services.ai.azure.com/api/projects/test"),
             "AZURE_AI_MODEL_DEPLOYMENT_NAME": "test-model",
         },
         credential=StaticCredential(),

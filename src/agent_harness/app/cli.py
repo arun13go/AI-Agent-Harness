@@ -11,8 +11,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent_harness.adapters.foundry.model_client import create_foundry_chat_client
-from agent_harness.adapters.maf.runtime import MafRuntime
-from agent_harness.adapters.storage.in_memory_action import (
+from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
+from agent_harness.adapters.storage.in_memory_action_stores import (
     InMemoryApprovalProvider,
     InMemoryArtifactStore,
     InMemoryCheckpointStore,
@@ -23,8 +23,8 @@ from agent_harness.adapters.storage.in_memory_action import (
 from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.adapters.tools.maintenance_request import MaintenanceRequestTool
 from agent_harness.adapters.tools.service_status import ServiceStatusTool
-from agent_harness.app.action_runner import ActionRunner
-from agent_harness.app.local_runner import LocalReadRunner
+from agent_harness.app.action_lifecycle import ActionLifecycle
+from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.core.configuration import HarnessConfig, ProfileName, load_harness_config
 from agent_harness.core.contracts import Tool
 from agent_harness.core.errors import ConfigurationError, HarnessError
@@ -152,7 +152,7 @@ async def _run_read(args: argparse.Namespace) -> dict[str, object]:
         ),
     )
     audit_sink = InMemoryAuditSink(args.event_schema)
-    runner = LocalReadRunner(config=config, tools=tools, audit_sink=audit_sink)
+    runner = ReadToolExecutor(config=config, tools=tools, audit_sink=audit_sink)
     result = await runner.run(
         authenticated_identity=identity,
         context=context,
@@ -198,7 +198,7 @@ async def _run_agent(args: argparse.Namespace) -> dict[str, object]:
     audit_sink = InMemoryAuditSink(args.event_schema)
     client = create_foundry_chat_client(config)
     try:
-        response = await MafRuntime(
+        response = await MafAgentExecutor(
             config=config,
             client=client,
             tools=tools,
@@ -245,7 +245,7 @@ async def _run_action_demo(args: argparse.Namespace) -> dict[str, object]:
     tools = Registry[Tool]("tool")
     tools.register(tool.definition.name, tool)
     audit_sink = InMemoryAuditSink(args.event_schema)
-    runner = ActionRunner(
+    runner = ActionLifecycle(
         config=config,
         tools=tools,
         artifacts=InMemoryArtifactStore(),

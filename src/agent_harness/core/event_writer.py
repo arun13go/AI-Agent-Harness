@@ -1,4 +1,4 @@
-"""Emit ordered run events through the shared audit contract."""
+"""Write ordered run events through the shared audit contract."""
 
 from __future__ import annotations
 

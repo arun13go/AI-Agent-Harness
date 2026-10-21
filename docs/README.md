@@ -94,7 +94,17 @@ Evaluation and infrastructure folders are added only when their first working ar
 - **Local runtime:** governed read and approval-gated action paths are available.
 - **Model runtime:** Phase 1C is complete with streaming tests and live Foundry tool-selection
   evidence using the approved `gpt-5-mini` exception. Reference-model quota remains unavailable.
-- **Azure deployment:** the isolated Foundry test project/model exists; repeatable application
-  deployment and Agent Inspector are Phase 1D work.
+- **HTTP application:** Phase 1D has a released Responses host, deterministic HTTP conformance
+  tests, and a local socket smoke proof; follow the
+  [HTTP code tour](getting-started/code-tour.md#phase-1d-http-path).
+- **Hosted identity:** a single-tenant Foundry ingress adapter relies on endpoint RBAC and binds
+  pseudonymous subjects. Guarded hosted startup and outbound call-ID forwarding are
+  tested. Live invocation succeeds, unauthenticated forged headers fail, and instruction
+  overrides fail; testing a separately unauthorized Entra principal remains pending.
+- **Container packaging:** Python 3.12 container assets and registry-only Bicep/ARM are available;
+  follow the [Azure Dev guide](getting-started/azure-dev.md) for prerequisites and current limits.
+- **Azure deployment:** Foundry-hosted version 4 completes a governed tool request with metadata-only
+  HTTP/agent/model/tool traces. Streaming receives model rate-limit errors. Live Inspector,
+  the remaining identity acceptance checks, and full deployment-path parity remain Phase 1D work.
 
 Use the implementation plan status table as the source of truth for future capabilities.

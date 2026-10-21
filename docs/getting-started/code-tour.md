@@ -1,7 +1,7 @@
 # Developer Code Tour
 
 > **Audience:** developers new to the implementation  
-> **Scope:** Phase 1A read path, Phase 1B action path, and the Phase 1C runtime slice
+> **Scope:** Phase 1A read, Phase 1B action, Phase 1C MAF, and Phase 1D local HTTP
 > **Purpose:** show where code lives and how one request moves through it
 
 ## Mental Model
@@ -82,6 +82,90 @@ Change the decision to `denied` to confirm that the effect count remains zero.
 | [`in_memory_action_stores.py`](../../src/agent_harness/adapters/storage/in_memory_action_stores.py) | Stores proposals, artifacts, checkpoints, approvals, run state, and idempotency records | Azure adapters in Phase 3 |
 | [`maf/agent_executor.py`](../../src/agent_harness/adapters/maf/agent_executor.py) | Executes released MAF agents with code-owned registry, governance, limits, source labels, audit, and trace correlation | MAF runtime adapter |
 | [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py) | Resolves environment references and creates the passwordless, bounded Foundry chat client | Foundry model adapter |
+
+### Phase 1D HTTP Path
+
+```text
+POST /responses
+  -> code-provided authenticator (never identity from JSON)
+  -> strict text-only request and body/output bounds
+  -> released Responses server
+  -> MafAgentExecutor.run / stream
+  -> registered tool -> ReadToolExecutor
+  -> correlated audit and terminal JSON / SSE
+```
+
+| File | Responsibility |
+|---|---|
+| [`agent_http_server.py`](../../src/agent_harness/app/agent_http_server.py) | Receives agent requests over HTTP, checks callers and request limits, invokes governed MAF execution, and returns JSON or streamed answers; supports local and Foundry-hosted startup |
+| [`request_identity.py`](../../src/agent_harness/adapters/foundry/request_identity.py) | Maps Foundry RBAC-authorized callers into one deployment tenant and hashed subjects; rejects missing or ambiguous platform context |
+| [`test_request_identity.py`](../../tests/adapters/foundry/test_request_identity.py) | Proves tenant-bound subject stability, duplicate-header rejection, obsolete-configuration rejection, and resistance to client identity overrides |
+| [`telemetry.py`](../../src/agent_harness/adapters/foundry/telemetry.py) | Exports fixed operational span metadata to Application Insights while dropping payloads, raw identity, arbitrary attributes, and exception details |
+| [`test_telemetry.py`](../../tests/adapters/foundry/test_telemetry.py) | Injects sensitive span data and verifies that it cannot reach export |
+| [`test_agent_http_server.py`](../../tests/app/test_agent_http_server.py) | Proves HTTP tool governance, identity isolation, strict input, streaming, cancellation, and failure privacy using scripted clients |
+| [`launch.json`](../../.vscode/launch.json) | Attaches the Python debugger after starting the HTTP host and opening Inspector |
+| [`tasks.json`](../../.vscode/tasks.json) | Checks debug ports, starts the repository's Python interpreter, and invokes the VS Code Inspector command |
+| [ADR 0010](../decisions/0010-stateless-governed-responses-host.md) | Records the released-SDK choice, stateless subset, privacy overrides, and remaining cloud boundary |
+
+After setting the same Foundry environment references used by `agent-run`:
+
+```powershell
+uv run python -m agent_harness.app.agent_http_server --tenant local-tenant --subject local-subject
+```
+
+`GET http://127.0.0.1:8088/readiness` reports service health without calling the model.
+`POST /responses` accepts `{"input":"Check API status","stream":false}`; use `stream:true` for SSE.
+User-message arrays containing text are also supported. Model selection and tools remain code-owned.
+Clients cannot supply instructions, system/developer/assistant messages, tool results, identity,
+stored-response references, background execution, or persistence.
+Foundry adds `agent_reference` routing metadata. The boundary accepts only this harness's
+fixed name and an optional numeric version, then strips that metadata before SDK execution.
+It does not select the model, tools, or instructions. Foreign references and extra fields fail.
+
+The host defaults `store` to false; requests are capped at 64 KiB and output at 4096 tokens.
+Audit remains in memory and therefore is not durable. SDK automatic telemetry configuration is
+disabled to avoid its sensitive-content defaults. Hosted packaging explicitly selects
+`--telemetry-exporter application-insights`, requiring a deployment connection string.
+The metadata-only exporter preserves HTTP/agent/model/tool trace relationships and counts,
+not prompts, answers, raw user keys, or exception details. Live cloud ingestion and connected
+HTTP/agent/model/tool spans are proven for a hosted JSON request. Live streaming currently hits
+the development model's rate limit; this is not a successful streaming smoke proof.
+
+For interactive debugging, press **F5** and select **Harness: Agent HTTP server and Inspector**.
+The task uses this repository's virtual environment and fixed sample development identity.
+Stop **Harness: Run agent HTTP server** using **Tasks: Terminate Task** after debugging; detaching
+the debugger does not terminate the server. The request subset is tested through HTTP, but a live
+Inspector session has not yet been proven. An Inspector client that requests unsupported history,
+tools, or persistence will receive an explicit rejection.
+
+The default executable mode binds only to loopback. Its fixed development identity must not be used as Azure
+authentication; composing it in a Foundry-hosted environment now fails explicitly.
+
+`create_foundry_responses_host` selects `FoundryIngressIdentity` instead. It requires the hosted
+environment marker and a valid platform agent tenant UUID. Foundry endpoint RBAC authorizes
+callers, including effective inherited roles; there is no application named-user allowlist.
+Obsolete `HARNESS_ALLOWED_FOUNDRY_USERS` settings fail startup. A request must carry exactly one
+platform user key and call ID, producing a tenant-bound hashed subject. Raw user keys and call
+IDs are not written into harness audit. See [ADR 0013](../decisions/0013-foundry-rbac-ingress-authorization.md).
+
+This is not general-purpose HTTP authentication. It relies on Foundry's isolated authenticated
+ingress; setting an environment variable or adding headers is not proof of caller authenticity.
+The `--hosted` mode validates this identity configuration before creating a model client, rejects
+local tenant/subject arguments, and binds port 8088 on all container interfaces. It closes the model
+and project clients and credential when the server stops. Do not run this mode outside Foundry's
+authenticated ingress.
+
+The hosted model client composes released MAF chat middleware. It reads the SDK's request context
+and forwards only `x-agent-foundry-call-id` through per-call `extra_headers`, never shared defaults.
+Missing or malformed context fails before sending a model request. Transport tests cover concurrent
+JSON and streaming calls, and HTTP tests prove SDK ingress context reaches the outbound model
+request without raw user keys or audit leakage. Hosted credentials exclude client-secret and
+developer-login providers while retaining platform managed/workload identity discovery.
+
+The [Dockerfile](../../Dockerfile) packages Python 3.12 and frozen production dependencies, uses a
+non-root user, and starts this hosted mode. The
+[Azure Dev guide](azure-dev.md) describes the registry infrastructure and remaining live gates.
+See [ADR 0011](../decisions/0011-single-tenant-foundry-ingress-identity.md).
 
 ## How Profiles Map to the Current Application
 

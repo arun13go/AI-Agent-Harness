@@ -1,0 +1,71 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Harness: Validate debug ports",
+      "type": "aitk",
+      "command": "debug-check-prerequisites",
+      "args": {
+        "portOccupancy": [5679, 8088]
+      }
+    },
+    {
+      "label": "Harness: Run agent HTTP server",
+      "type": "process",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "args": [
+        "-m", "debugpy", "--listen", "127.0.0.1:5679",
+        "-m", "agent_harness.app.agent_http_server",
+        "--tenant", "local-tenant",
+        "--subject", "local-subject",
+        "--port", "8088"
+      ],
+      "linux": {
+        "command": "${workspaceFolder}/.venv/bin/python"
+      },
+      "osx": {
+        "command": "${workspaceFolder}/.venv/bin/python"
+      },
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "dependsOn": ["Harness: Validate debug ports"],
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^(.+):(\\d+):(\\d+): (.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "[Rr]unning on"
+        }
+      }
+    },
+    {
+      "label": "Harness: Open Agent Inspector",
+      "type": "shell",
+      "command": "echo '${input:harnessInspector}'",
+      "presentation": {
+        "reveal": "never"
+      },
+      "dependsOn": ["Harness: Run agent HTTP server"],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "harnessInspector",
+      "type": "command",
+      "command": "ai-mlstudio.openTestTool",
+      "args": {
+        "triggeredFrom": "tasks",
+        "port": 8088
+      }
+    }
+  ]
+}

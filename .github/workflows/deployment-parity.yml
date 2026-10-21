@@ -1,0 +1,24 @@
+name: Deployment template parity
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/deployment-parity.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/deployment-parity.yml"
+permissions:
+  contents: read
+jobs:
+  generated-arm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install pinned Bicep compiler
+        run: az bicep install --version v0.40.2
+      - name: Reject generated ARM drift
+        run: |
+          az bicep build --file infra/main.bicep --outfile infra/main.json
+          git diff --exit-code -- infra/main.json

@@ -15,6 +15,9 @@
 | Bicep CLI | 0.40.2 | environment preflight |
 | Microsoft Agent Framework Core | 1.19.0 | exact direct dependency |
 | Microsoft Agent Framework Foundry adapter | 1.13.1 | exact direct dependency |
+| Azure AI Agent Server Core / Responses | 2.2.0 / 2.3.0 | exact direct dependencies |
+| Starlette | 1.8.0 | exact direct dependency for the HTTP authentication boundary |
+| debugpy | 1.8.20 | development dependency for the root F5 configuration |
 | Azure Developer CLI | 1.34.2 | environment preflight |
 | `microsoft.foundry` azd extension | 1.0.0-beta.2 until a stable release exists | environment preflight; deployment tooling only |
 | Ruff | 0.16.9 | development dependency |

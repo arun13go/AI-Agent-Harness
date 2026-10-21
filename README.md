@@ -7,7 +7,14 @@ Foundry for models, evaluation, and tracing instead of creating another agent ru
 > **Current status:** Phase 1C is complete with an approved live-test model exception. The governed
 > MAF-to-Foundry CLI selected a registered tool with correlated model and tool traces; streaming
 > conformance also passes. The proof used `gpt-5-mini` because reference-model quota was unavailable.
-> Phase 1D adds Azure application deployment, the supported HTTP host, and Agent Inspector.
+> Phase 1D is in progress: the released Responses HTTP host has deterministic conformance tests
+> and a local socket smoke proof. Foundry-hosted version 4 completed a live governed tool request
+> with correlated HTTP, agent, model, and tool traces. Live streaming is blocked by model rate
+> limits; Agent Inspector and full deployment-path parity remain pending.
+> The guarded hosted entry point binds one deployment tenant with Foundry endpoint RBAC and
+> request-scoped Foundry call-ID forwarding. Python 3.12 container packaging and registry
+> infrastructure and metadata-only Application Insights export are available. Live checks reject
+> unauthenticated forged headers and instruction overrides; an unauthorized-principal test remains open.
 
 ## Understand it in two minutes
 
@@ -103,7 +110,27 @@ uv run agent-harness agent-run `
 Authentication uses `DefaultAzureCredential`; do not place credentials, endpoints, deployment
 names, tenant IDs, or subscription IDs in committed profiles.
 
+Run the Phase 1D local HTTP host with the same Foundry environment variables:
+
+```powershell
+uv run python -m agent_harness.app.agent_http_server `
+  --tenant local-tenant `
+  --subject local-subject
+```
+
+It listens only on `127.0.0.1:8088`. This is a development identity, not cloud authentication.
+Use `GET /readiness` for service health and `POST /responses` with
+`{"input":"Check API status","stream":false}` for a stateless run. Instructions, caller-selected
+tools, stored conversations, and background requests are rejected. For debugging, press **F5**
+and choose **Harness: Agent HTTP server and Inspector** after setting the Foundry environment in
+VS Code's process. Live Inspector compatibility is still pending validation; see the
+[HTTP code tour](docs/getting-started/code-tour.md#phase-1d-http-path).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the supported workflow and dependency-update policy.
+
+For Foundry Hosted Agents container deployment, see the
+[Azure Dev container guide](docs/getting-started/azure-dev.md). The registry template reuses an
+existing project and model; it does not yet provide the complete Phase 1D deployment topology.
 
 ## Profiles
 
@@ -160,8 +187,9 @@ released MAF Harness
 
 The live proof on 16 October 2026 selected `get_service_status`, returned the sample API status, and
 emitted six audit events with correlated model and tool spans. It used the approved `gpt-5-mini`
-exception; reference-model validation remains quota-blocked. Next is Phase 1D: deploy the application
-and add the HTTP-hosted Agent Inspector path.
+exception; reference-model validation remains quota-blocked. Phase 1D now has a tested local HTTP
+boundary and Inspector launch wiring. Next: add verified Foundry-hosted identity and repeatable
+Azure deployment, then collect live Inspector and cloud trace evidence.
 
 ## Product boundary
 

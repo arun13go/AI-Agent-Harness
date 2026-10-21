@@ -37,6 +37,7 @@ from agent_framework.exceptions import (
 from opentelemetry import trace
 from opentelemetry.trace import (
     NonRecordingSpan,
+    Span,
     SpanContext,
     TraceFlags,
     TraceState,
@@ -432,7 +433,12 @@ class MafAgentExecutor:
         )
 
     @staticmethod
-    def _parent_span(trace_id: str, run_id: str) -> NonRecordingSpan:
+    def _parent_span(trace_id: str, run_id: str) -> Span:
+        current = trace.get_current_span()
+        if current.get_span_context().is_valid and (
+            current.get_span_context().trace_id == int(trace_id, 16)
+        ):
+            return current
         span_id = int.from_bytes(sha256(run_id.encode("utf-8")).digest()[:8], "big") or 1
         return NonRecordingSpan(
             SpanContext(

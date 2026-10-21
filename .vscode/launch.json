@@ -1,0 +1,16 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Harness: Agent HTTP server and Inspector",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": {
+        "host": "127.0.0.1",
+        "port": 5679
+      },
+      "preLaunchTask": "Harness: Open Agent Inspector",
+      "internalConsoleOptions": "neverOpen"
+    }
+  ]
+}

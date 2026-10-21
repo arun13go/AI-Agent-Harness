@@ -1,5 +1,5 @@
 FROM ghcr.io/astral-sh/uv:0.11.15 AS uv
-FROM python:3.12.13-slim-bookworm
+FROM python:3.14.7-slim-bookworm
 
 COPY --from=uv /uv /usr/local/bin/uv
 

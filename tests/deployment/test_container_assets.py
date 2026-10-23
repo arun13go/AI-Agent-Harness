@@ -1,4 +1,4 @@
-"""Check the declared container contract and registry-only deployment boundaries."""
+"""Check the container contract and default registry-only deployment boundary."""
 
 from __future__ import annotations
 
@@ -61,9 +61,14 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
         "foundryAccountName",
         "foundryProjectName",
         "modelDeploymentName",
+        "registrationConfig",
     }
 
-    assert set(template["resources"]) == {"existingGroup", "registry"}
+    assert set(template["resources"]) == {"existingGroup", "registry", "registration"}
+    assert template["parameters"]["registrationConfig"]["nullable"] is True
+    assert template["resources"]["registration"]["condition"] == (
+        "[not(equals(parameters('registrationConfig'), null()))]"
+    )
     assert template["resources"]["existingGroup"]["existing"] is True
     resources = template["resources"]["registry"]["properties"]["template"]["resources"]
     assert set(resources) == {"account", "project", "connection", "registry"}

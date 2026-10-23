@@ -29,6 +29,10 @@ dependencies = [
 agent-harness = "agent_harness.app.cli:main"
 
 [dependency-groups]
+deployment = [
+    "azure-identity==1.26.0",
+    "pydantic==2.12.5",
+]
 dev = [
     "debugpy==1.8.20",
     "httpx==0.28.1",

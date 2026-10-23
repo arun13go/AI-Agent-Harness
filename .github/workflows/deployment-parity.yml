@@ -2,16 +2,57 @@ name: Deployment template parity
 on:
   pull_request:
     paths:
+      - ".gitattributes"
       - "infra/**"
+      - "azure.yaml"
+      - "src/agent_harness/adapters/foundry/deployment.py"
+      - "src/agent_harness/adapters/foundry/registration.py"
+      - "src/agent_harness/app/register_hosted_agent.py"
+      - "src/agent_harness/app/package_registration.py"
+      - "src/agent_harness/core/errors.py"
+      - "src/agent_harness/core/types.py"
+      - "tests/deployment/**"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/deployment-parity.yml"
   push:
     branches: [main]
     paths:
+      - ".gitattributes"
       - "infra/**"
+      - "azure.yaml"
+      - "src/agent_harness/adapters/foundry/deployment.py"
+      - "src/agent_harness/adapters/foundry/registration.py"
+      - "src/agent_harness/app/register_hosted_agent.py"
+      - "src/agent_harness/app/package_registration.py"
+      - "src/agent_harness/core/errors.py"
+      - "src/agent_harness/core/types.py"
+      - "tests/deployment/**"
+      - "pyproject.toml"
+      - "uv.lock"
       - ".github/workflows/deployment-parity.yml"
 permissions:
   contents: read
 jobs:
+  hosted-release-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+      - name: Install pinned dependency manager
+        run: python -m pip install uv==0.11.15
+      - name: Restore frozen development environment
+        run: uv sync --frozen
+      - name: Check hosted release and deployment asset contracts
+        run: uv run --frozen pytest tests/deployment -q
+      - name: Reject embedded runner and dependency drift
+        run: |
+          uv export --frozen --only-group deployment --no-header --no-annotate --output-file infra/registration-requirements.txt
+          git diff --exit-code -- infra/registration-requirements.txt
+          uv run --frozen python -m agent_harness.app.package_registration --check
+          bash -n infra/scripts/register-agent.sh
   generated-arm:
     runs-on: ubuntu-latest
     steps:

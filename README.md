@@ -9,12 +9,13 @@ Foundry for models, evaluation, and tracing instead of creating another agent ru
 > conformance also passes. The proof used `gpt-5-mini` because reference-model quota was unavailable.
 > Phase 1D is in progress: the released Responses HTTP host has deterministic conformance tests
 > and a local socket smoke proof. Foundry-hosted version 4 completed a live governed tool request
-> with correlated HTTP, agent, model, and tool traces. Live streaming is blocked by model rate
-> limits; Agent Inspector and full deployment-path parity remain pending.
+> with correlated HTTP, agent, model, and tool traces, including streaming. Full
+> deployment-path parity remains pending.
 > The guarded hosted entry point binds one deployment tenant with Foundry endpoint RBAC and
 > request-scoped Foundry call-ID forwarding. Python 3.12 container packaging and registry
 > infrastructure and metadata-only Application Insights export are available. Live checks reject
-> unauthenticated forged headers and instruction overrides; an unauthorized-principal test remains open.
+> unauthenticated forged headers and instruction overrides. Unauthorized-principal and full
+> ingress acceptance remain open.
 
 ## Understand it in two minutes
 

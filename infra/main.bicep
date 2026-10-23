@@ -20,6 +20,17 @@ param foundryProjectName string
 @description('Existing model deployment to reuse without reprovisioning.')
 param modelDeploymentName string
 
+@sealed()
+type RegistrationConfig = {
+  identityName: string
+  image: string
+  exclusiveDeploymentOwner: bool
+  allowInitialExposure: bool
+}
+
+@description('Opt-in candidate registration using an existing approved identity. Null leaves the azd path unchanged.')
+param registrationConfig RegistrationConfig?
+
 resource existingGroup 'Microsoft.Resources/resourceGroups@2025-04-01' existing = {
   name: resourceGroupName
 }
@@ -33,8 +44,28 @@ module registry './registry.bicep' = {
       'azd-env-name': environmentName
       'azd-service-name': 'harness'
     }
+
     foundryAccountName: foundryAccountName
     foundryProjectName: foundryProjectName
+  }
+}
+
+module registration './registration.bicep' = if (registrationConfig != null) {
+  scope: existingGroup
+  params: {
+    name: 'harness-registration-${uniqueString(subscription().id, resourceGroupName, environmentName)}'
+    location: location
+    tags: {
+      'azd-env-name': environmentName
+      'azd-service-name': 'harness'
+    }
+    identityName: registrationConfig!.identityName
+    image: registrationConfig!.image
+    exclusiveDeploymentOwner: registrationConfig!.exclusiveDeploymentOwner
+    allowInitialExposure: registrationConfig!.allowInitialExposure
+    projectResourceId: registry.outputs.projectId
+    projectEndpoint: registry.outputs.projectEndpoint
+    modelDeploymentName: modelDeploymentName
   }
 }
 
@@ -46,3 +77,4 @@ output AZURE_AI_PROJECT_ID string = registry.outputs.projectId
 output AZURE_AI_PROJECT_ENDPOINT string = registry.outputs.projectEndpoint
 output FOUNDRY_PROJECT_ENDPOINT string = registry.outputs.projectEndpoint
 output AZURE_AI_MODEL_DEPLOYMENT_NAME string = modelDeploymentName
+output HARNESS_REGISTRATION_RECEIPT object = registrationConfig != null ? registration!.outputs.receipt : {}

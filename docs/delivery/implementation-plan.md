@@ -24,7 +24,7 @@ adapter expectations.
 | 1A | Governance and read path foundation | Complete |
 | 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
-| 1D | Azure Dev deployment | In progress (hosted JSON/tool/trace smoke passes; live streaming throttled) |
+| 1D | Azure Dev deployment | In progress (hosted smoke passes; local Inspector request operator-confirmed) |
 | 2 | Grounded-assistant profile | Not started |
 | 3 | Durable Azure adapters | Not started |
 | 4 | Evaluation and operations | Not started |
@@ -277,19 +277,18 @@ configuration, loopback readiness, and denial of instruction overrides without m
 129 deterministic tests, Pyright, Ruff, Bicep compilation, server-side ARM validation, azd preview,
 and local doctor checks pass. An image smoke test is not a Foundry-hosted identity proof.
 
-**Hosted smoke increment (21 October 2026):** version 4 is active. A real JSON request completes
-through the registered service-status tool. Application Insights shows HTTP, agent, model, and
-tool spans sharing a connected trace tree, with metadata-only attributes. Unauthenticated forged
-headers return 401 and instruction overrides return 400. Platform-added agent-reference routing
-metadata is validated and stripped, with regression tests. Live SSE fails because the development
-model returns `rate_limit_exceeded`, confirmed in a matching local HTTP reproduction; no repeated
-model retries or quota changes are authorized by that finding.
+**Current Phase 1D state:** hosted agent v4 is active; JSON, SSE, tool calls and metadata-only
+cloud traces are verified. Unauthenticated forged-header (401) and instruction-override (400)
+requests are rejected. A local Inspector request is operator-confirmed. The account is public
+(`publicNetworkAccess=Enabled`), not network-isolated. The agent is a Foundry data-plane resource,
+not a native ARM resource, so Deploy to Azure needs the optional
+[registration bridge](../getting-started/azure-dev.md#registration-bridge-optional-disabled-by-default)
+([ADR 0015](../decisions/0015-passwordless-hosted-deployment-bridge.md)).
 
-**Still open:** complete platform ingress acceptance with an unauthorized Entra principal,
-complete canonical Bicep and the portal artifact beyond registry prerequisites,
-successful live streaming after rate capacity is available, and live Inspector evidence.
-The loopback development authenticator is not deployable cloud authentication.
-See [ADR 0010](../decisions/0010-stateless-governed-responses-host.md).
+**Still open:** unauthorized-principal (403) and full ingress acceptance; complete canonical Bicep
+and portal artifact; the loopback authenticator is not deployable cloud authentication
+([ADR 0010](../decisions/0010-stateless-governed-responses-host.md)).
+
 
 ### Phase 1 Boundary
 
@@ -322,27 +321,20 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 ## Current Next Step
 
-Continue **Phase 1D**. Deterministic MAF composition, governed registered-tool invocation,
-source-label propagation, normalized model failures, cancellation audit, trace correlation, the
-passwordless Foundry client factory, the live CLI path, and streaming conformance are implemented.
-Live Foundry tool invocation and correlated spans are now proven with the approved model exception
-above. The stateless local HTTP host, debug wiring, and Foundry identity composition
-are implemented. The operator selected an existing project/model; outbound call context,
-registry provisioning, image build, and image smoke checks are complete. The original caller
-enrollment design was blocked by the lack of a documented key lookup and was replaced through
-an explicitly approved authorization decision.
-See the [discovery findings](../getting-started/azure-dev.md#caller-enrollment-discovery).
-The operator approved effective endpoint RBAC, including inherited access, on 21 October 2026.
-[ADR 0013](../decisions/0013-foundry-rbac-ingress-authorization.md) replaces named-key enrollment;
-the identity adapter retains tenant-bound subjects and strict platform-context validation.
-Metadata-only tracing is composed under [ADR 0014](../decisions/0014-metadata-only-application-insights-export.md).
-The updated image is deployed; hosted JSON execution, runtime model access, registered tool
-execution, and cloud trace ingestion are proven. Next resolve development-model throttling
-before another hosted streaming smoke, complete the remaining identity tests, then verify
-Inspector and full deployment-path parity. Evaluation generation is deferred until smoke checks
-are complete.
+Continue **Phase 1D**. The registration bridge is implemented locally and disabled by default;
+it has not run in the cloud. Remaining gates:
+
+- A deployment-script execution path compatible with tenant storage-authentication controls
+  (shared keys stay disabled), then a bounded cloud parity test.
+- Least-privilege custom role (project `agents/read` + `agents/write`), created and granted.
+- Image delivery and portal template publication.
+- Unauthorized-principal (403) and full ingress acceptance.
+- Evaluation generation (deferred).
+
+Cloud resources, role assignments, publication and endpoint changes each need separate approval.
 See [ADR 0009](../decisions/0009-defer-agent-inspector-to-http-host.md) and
 [ADR 0010](../decisions/0010-stateless-governed-responses-host.md).
+
 
 Tool versions and upgrade policy are in the
 [toolchain policy](../getting-started/toolchain.md).

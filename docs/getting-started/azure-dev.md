@@ -178,47 +178,67 @@ or proof of governance. Keep readiness health separate from agent-quality evalua
 The [packaging decision](../decisions/0012-foundry-hosted-container-packaging.md) records the
 boundary and remaining Phase 1D acceptance gates.
 
-## Verified development evidence
+## Verified state
 
-On 20 October 2026, the operator-approved registry deployment succeeded through azd. Live checks
-confirmed Basic SKU, disabled admin/anonymous access, the Entra project connection, and project
-`AcrPull` scoped to that registry. An ACR remote build installed the frozen production lock and
-pushed the image successfully. A separate ACR task ran that exact image digest and proved:
+Hosted agent `agent-harness` v4 is active (Responses 2.0.0). Verified through the Foundry endpoint:
 
-- The process runs as UID 10001.
-- Hosted startup fails without platform configuration.
-- Local development mode becomes ready on loopback.
-- Client instruction overrides receive HTTP 400 without a model call.
+- Unauthenticated requests with forged identity headers return 401; client instruction overrides return 400.
+- Authenticated JSON and SSE requests complete with a registered tool result.
+- Application Insights shows correlated HTTP, agent, model and tool spans (counts only, no payloads).
+- The container runs as UID 10001 and fails closed without platform configuration.
+- Local Agent Inspector service-health request was operator-confirmed; this is not hosted or trace-panel proof.
 
-The smoke task stopped its server on completion. No agent endpoint was created and no platform
-identity was simulated as cloud proof. The local source suite has 129 passing tests with clean
-Pyright and Ruff checks. Customer resource names, image digest, and run IDs remain in ignored
-local evidence, not portable configuration.
+Open: unauthorized-principal (403) test, full ingress acceptance, evaluation, and `azd`/Deploy to Azure parity.
+The account uses `publicNetworkAccess=Enabled` and `disableLocalAuth=true`; it is not network-isolated.
+Customer identifiers and run IDs stay in ignored local evidence.
 
-### Hosted smoke evidence (21 October 2026)
+## Registration bridge (optional, disabled by default)
 
-Version 4 is active after remote image rebuilds and azd deployment. Initial registration rejected
-reserved environment-variable overrides; removing them allowed platform injection and startup.
-Initial live requests then exposed Foundry's added `agent_reference`. The boundary now validates
-the fixed harness name and optional numeric version and strips that inert routing metadata;
-it does not permit execution or identity overrides. Regression tests cover this wire shape.
+**Purpose:** let the Deploy to Azure path register the image as a hosted-agent version, as `azd` does.
+**Scope:** deployment tooling only; not request handling. Design: [ADR 0015](../decisions/0015-passwordless-hosted-deployment-bridge.md).
+**Status:** implemented and tested locally; never run successfully in the cloud.
 
-Verified through the real Foundry endpoint:
+| Piece | Location |
+|---|---|
+| Release/target contract | [deployment.py](../../src/agent_harness/adapters/foundry/deployment.py) |
+| Registration runner | [registration.py](../../src/agent_harness/adapters/foundry/registration.py), [register_hosted_agent.py](../../src/agent_harness/app/register_hosted_agent.py) |
+| Bundle packaging | [package_registration.py](../../src/agent_harness/app/package_registration.py), [registration-bundle.json](../../infra/registration-bundle.json) |
+| ARM deployment script | [registration.bicep](../../infra/registration.bicep), [register-agent.sh](../../infra/scripts/register-agent.sh) |
 
-- Unauthenticated requests with forged platform identity headers receive HTTP 401.
-- Client instruction overrides receive HTTP 400.
-- An authenticated JSON request completes with a registered service-status tool result.
-- An authenticated request carrying forged platform headers and client identity claims still
-  completes through the platform boundary; it does not select another tenant's sample data.
-- Existing Application Insights contains correlated HTTP, agent, two model calls, and tool
-  spans under one trace ID, with counts and no business payload attributes.
+Runner behavior:
 
-Live streaming reaches SSE but ends in `response.failed`. A matching local HTTP reproduction
-identified the provider's `rate_limit_exceeded` error for the development model. Stop repeated
-model retries once throttling is established; do not increase quota or switch models without
-an explicit decision. This is not successful hosted streaming evidence.
+- Managed identity only; requires `--managed-identity-client-id` and `--exclusive-deployment-owner`.
+- At most one create request; ambiguous outcomes return `deployment_outcome_unknown` (do not rerun blindly).
+- Never patches or promotes endpoints. An existing agent needs a concrete serving pin; a first deployment needs `--allow-initial-exposure`.
+- Emits a small receipt without prompts, tokens or provider bodies.
 
-Still open: a separately unauthorized Entra principal test, full ingress-bypass acceptance,
-successful hosted streaming after capacity is available, live Inspector, evaluation, and complete
-azd / Deploy to Azure parity. No evaluation suite was generated during these smoke checks.
-Detailed identifiers and trace references stay in ignored local evidence.
+Enable by passing `registrationConfig` to [main.bicep](../../infra/main.bicep) (not during `azd up`):
+
+```json
+{ "registrationConfig": { "value": {
+  "identityName": "<existing-identity>",
+  "image": "<registry>.azurecr.io/agent-harness@sha256:<digest>",
+  "exclusiveDeploymentOwner": true,
+  "allowInitialExposure": false } } }
+```
+
+The identity and image must already exist; the bridge creates neither and grants no roles.
+Needed identity permission (proposed, not created): project-scoped `Microsoft.CognitiveServices/accounts/AIServices/agents/read` and `agents/write`.
+
+Regenerate assets after changing runner sources or dependencies:
+
+```powershell
+uv export --frozen --only-group deployment --no-header --no-annotate --output-file infra\registration-requirements.txt
+uv run --frozen python -m agent_harness.app.package_registration
+az bicep build --file infra\main.bicep --outfile infra\main.json
+uv run --frozen pytest tests/deployment -q
+```
+
+Execution limits: AVM `deployment-script` 0.5.2, Azure CLI 2.89.1, venv 60 s, install 300 s, runner 660 s,
+script 20 min, cleanup `Always`, 24 h retention.
+
+### Current limitations
+
+- The deployment-script storage fails in this tenant (`KeyBasedAuthenticationNotPermitted`). Do not enable shared keys; a compatible execution design or governance decision is required.
+- Script-service Python/dependency execution and live runner compatibility are unverified.
+- Image delivery and portal template publication are open.

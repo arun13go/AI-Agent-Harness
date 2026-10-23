@@ -128,15 +128,31 @@ disabled to avoid its sensitive-content defaults. Hosted packaging explicitly se
 `--telemetry-exporter application-insights`, requiring a deployment connection string.
 The metadata-only exporter preserves HTTP/agent/model/tool trace relationships and counts,
 not prompts, answers, raw user keys, or exception details. Live cloud ingestion and connected
-HTTP/agent/model/tool spans are proven for a hosted JSON request. Live streaming currently hits
-the development model's rate limit; this is not a successful streaming smoke proof.
+HTTP/agent/model/tool spans are proven for hosted JSON and streaming requests.
 
 For interactive debugging, press **F5** and select **Harness: Agent HTTP server and Inspector**.
 The task uses this repository's virtual environment and fixed sample development identity.
 Stop **Harness: Run agent HTTP server** using **Tasks: Terminate Task** after debugging; detaching
-the debugger does not terminate the server. The request subset is tested through HTTP, but a live
-Inspector session has not yet been proven. An Inspector client that requests unsupported history,
-tools, or persistence will receive an explicit rejection.
+the debugger does not terminate the server. A local Inspector service-health request was
+operator-confirmed; this is not hosted, debugger or trace-panel validation. Inspector requests for
+unsupported history, tools or persistence are rejected explicitly.
+
+### Deployment bridge (optional, deployment-time only)
+
+Registers the image as a hosted-agent version for the Deploy to Azure path; not part of request
+handling. Design: [ADR 0015](../decisions/0015-passwordless-hosted-deployment-bridge.md). Usage:
+[Azure Dev guide](azure-dev.md#registration-bridge-optional-disabled-by-default).
+
+| File | Responsibility |
+|---|---|
+| [deployment.py](../../src/agent_harness/adapters/foundry/deployment.py) | Typed release/target contract: digest-pinned image, azd and REST definitions, endpoint/resource-ID check |
+| [registration.py](../../src/agent_harness/adapters/foundry/registration.py) | Register or reuse one candidate version; one create attempt; never promotes |
+| [register_hosted_agent.py](../../src/agent_harness/app/register_hosted_agent.py) | Managed-identity-only CLI; emits a receipt or sanitized failure |
+| [package_registration.py](../../src/agent_harness/app/package_registration.py) | Builds the allowlisted, hash-locked bundle |
+| [registration.bicep](../../infra/registration.bicep), [register-agent.sh](../../infra/scripts/register-agent.sh) | Opt-in ARM deployment script and bootstrap |
+| [tests/deployment](../../tests/deployment) | Release, registration, transport and bundle tests; CI via the [parity workflow](../../.github/workflows/deployment-parity.yml) |
+
+Not cloud-validated; see the ADR for open gates.
 
 The default executable mode binds only to loopback. Its fixed development identity must not be used as Azure
 authentication; composing it in a Foundry-hosted environment now fails explicitly.

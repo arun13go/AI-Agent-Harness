@@ -104,7 +104,7 @@ Evaluation and infrastructure folders are added only when their first working ar
 - **Container packaging:** Python 3.12 container assets and registry-only Bicep/ARM are available;
   follow the [Azure Dev guide](getting-started/azure-dev.md) for prerequisites and current limits.
 - **Azure deployment:** Foundry-hosted version 4 completes a governed tool request with metadata-only
-  HTTP/agent/model/tool traces. Streaming receives model rate-limit errors. Live Inspector,
-  the remaining identity acceptance checks, and full deployment-path parity remain Phase 1D work.
+  HTTP/agent/model/tool traces, including streaming. Identity acceptance and full
+  deployment-path parity remain Phase 1D work.
 
 Use the implementation plan status table as the source of truth for future capabilities.

@@ -139,20 +139,35 @@ unsupported history, tools or persistence are rejected explicitly.
 
 ### Deployment bridge (optional, deployment-time only)
 
-Registers the image as a hosted-agent version for the Deploy to Azure path; not part of request
-handling. Design: [ADR 0015](../decisions/0015-passwordless-hosted-deployment-bridge.md). Usage:
-[Azure Dev guide](azure-dev.md#registration-bridge-optional-disabled-by-default).
+**Why it exists:** creating a container registry does not tell Foundry which container to run.
+`azd` already performs that registration. The optional bridge adds it to the ARM/Deploy to Azure
+path; it does not build the container or answer user requests.
 
-| File | Responsibility |
+**Inputs:** an existing container image identified by its SHA-256 digest, the target Foundry
+project, and an existing managed identity with registration permission.
+
+**When explicitly enabled, it runs this sequence:**
+
+| Step / file | What it does |
 |---|---|
-| [deployment.py](../../src/agent_harness/adapters/foundry/deployment.py) | Typed release/target contract: digest-pinned image, azd and REST definitions, endpoint/resource-ID check |
-| [registration.py](../../src/agent_harness/adapters/foundry/registration.py) | Register or reuse one candidate version; one create attempt; never promotes |
-| [register_hosted_agent.py](../../src/agent_harness/app/register_hosted_agent.py) | Managed-identity-only CLI; emits a receipt or sanitized failure |
-| [package_registration.py](../../src/agent_harness/app/package_registration.py) | Builds the allowlisted, hash-locked bundle |
-| [registration.bicep](../../infra/registration.bicep), [register-agent.sh](../../infra/scripts/register-agent.sh) | Opt-in ARM deployment script and bootstrap |
-| [tests/deployment](../../tests/deployment) | Release, registration, transport and bundle tests; CI via the [parity workflow](../../.github/workflows/deployment-parity.yml) |
+| 1. [registration.bicep](../../infra/registration.bicep) | ARM starts a temporary deployment script using the supplied identity. |
+| 2. [register-agent.sh](../../infra/scripts/register-agent.sh) | Verifies the packaged Python code, installs locked dependencies, then starts the CLI with a timeout. |
+| 3. [register_hosted_agent.py](../../src/agent_harness/app/register_hosted_agent.py) | Reads the image/project settings and signs in using managed identity, without a password. |
+| 4. [deployment.py](../../src/agent_harness/adapters/foundry/deployment.py) | Validates those settings and builds the Foundry API request describing the container to run. |
+| 5. [registration.py](../../src/agent_harness/adapters/foundry/registration.py) | Finds an identical agent version or requests one new version, waits for `active`, and returns its version number and image. |
 
-Not cloud-validated; see the ADR for open gates.
+**Traffic:** if version 4 serves users, registering version 5 leaves users on version 4.
+Switching traffic requires a separate step. A first deployment has no old version to protect,
+so it requires explicit approval for possible immediate exposure. `active` is not a passed smoke test.
+
+Before deployment, [package_registration.py](../../src/agent_harness/app/package_registration.py)
+packages the runner code, not the container image. [Deployment tests](../../tests/deployment)
+and [CI](../../.github/workflows/deployment-parity.yml) check the runner and generated assets.
+
+**Status:** disabled by default; do not enable alongside `azd` registration. Cloud validation is
+blocked by deployment-script storage authentication (`KeyBasedAuthenticationNotPermitted`).
+Design: [ADR 0015](../decisions/0015-passwordless-hosted-deployment-bridge.md).
+Configuration: [Azure Dev guide](azure-dev.md#registration-bridge-optional-disabled-by-default).
 
 The default executable mode binds only to loopback. Its fixed development identity must not be used as Azure
 authentication; composing it in a Foundry-hosted environment now fails explicitly.

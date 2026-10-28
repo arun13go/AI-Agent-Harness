@@ -178,6 +178,28 @@ or proof of governance. Keep readiness health separate from agent-quality evalua
 The [packaging decision](../decisions/0012-foundry-hosted-container-packaging.md) records the
 boundary and remaining Phase 1D acceptance gates.
 
+## Register the hosted agent (both entry points)
+
+Per [ADR 0016](../decisions/0016-registration-outside-deployment-scripts.md), neither `azd up`'s
+provisioning nor Deploy to Azure registers an agent. Both create the same infrastructure and
+outputs; one shared step then builds the image in ACR and registers a hosted-agent version with
+your own Entra identity. It needs no shared-key storage access and no new role grants for the harness.
+
+1. **Provision.** Use either `azd provision` or the **Deploy to Azure** button.
+2. **Record outputs (portal path only).** Copy these deployment outputs into the azd environment
+   (`azd env set <name> <value>`): `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_REGISTRY_NAME`,
+   `AZURE_CONTAINER_REGISTRY_ENDPOINT`, `AZURE_AI_PROJECT_ID`, `AZURE_AI_PROJECT_ENDPOINT`,
+   `FOUNDRY_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME`. `azd provision` records them itself.
+3. **Build and register.** Run `azd deploy` from the repository root. It builds remotely in ACR and
+   registers a hosted-agent version. Confirm which version serves traffic before relying on it;
+   this repo has not yet verified `azd deploy` routing behavior for a first deployment.
+4. **Smoke test.** Run the post-registration checks (JSON, SSE, tool call, traces) before treating
+   the environment as parity-proven. A successful ARM deployment is not that proof.
+
+The required outputs are asserted by `tests/deployment`, and CI rejects drift between the Bicep and
+the generated ARM. The ADR 0015 bridge is not part of this path. Cloud resources, role grants and
+endpoint changes still need separate approval.
+
 ## Verified state
 
 Hosted agent `agent-harness` v4 is active (Responses 2.0.0). Verified through the Foundry endpoint:

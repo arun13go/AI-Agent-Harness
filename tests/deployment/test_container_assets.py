@@ -89,3 +89,17 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
     assert template["outputs"]["AZURE_AI_MODEL_DEPLOYMENT_NAME"]["value"] == (
         "[parameters('modelDeploymentName')]"
     )
+
+
+def test_template_exposes_outputs_needed_by_shared_registration_step() -> None:
+    template = json.loads((ROOT / "infra/main.json").read_text())
+    required = {
+        "AZURE_RESOURCE_GROUP",
+        "AZURE_CONTAINER_REGISTRY_NAME",
+        "AZURE_CONTAINER_REGISTRY_ENDPOINT",
+        "AZURE_AI_PROJECT_ID",
+        "AZURE_AI_PROJECT_ENDPOINT",
+        "FOUNDRY_PROJECT_ENDPOINT",
+        "AZURE_AI_MODEL_DEPLOYMENT_NAME",
+    }
+    assert required <= set(template["outputs"])

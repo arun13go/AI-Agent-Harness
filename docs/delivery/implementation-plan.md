@@ -324,9 +324,11 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 Continue **Phase 1D**. The registration bridge is implemented locally and disabled by default;
 it has not run in the cloud. Remaining gates:
 
-- A deployment-script execution path compatible with tenant storage-authentication controls
-  (shared keys stay disabled), then a bounded cloud parity test.
-- Least-privilege custom role (project `agents/read` + `agents/write`), created and granted.
+- [ADR 0016](../decisions/0016-registration-outside-deployment-scripts.md) (accepted): register
+  outside deployment scripts, since shared keys stay disabled. Next: the documented registration
+  step, matching ARM/`azd` outputs and a bounded cloud parity test.
+- Least-privilege custom role (project `agents/read` + `agents/write`), only if a managed-identity
+  or workload-identity runner is adopted (ADR 0016, Phase 5).
 - Image delivery and portal template publication.
 - Unauthorized-principal (403) and full ingress acceptance.
 - Evaluation generation (deferred).

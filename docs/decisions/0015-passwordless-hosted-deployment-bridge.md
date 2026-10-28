@@ -62,7 +62,7 @@ register it. The bridge closes that gap with an ARM deployment script.
 
 ## Current limitations and open gates
 
-- Deployment-script supporting storage fails in this tenant (`KeyBasedAuthenticationNotPermitted`). Shared keys and tenant policy must not be weakened; a compatible execution design or governance decision is required.
+- Deployment-script supporting storage fails in this tenant (`KeyBasedAuthenticationNotPermitted`). Shared keys and tenant policy must not be weakened. [ADR 0016](0016-registration-outside-deployment-scripts.md) (accepted) registers outside deployment scripts; this bridge stays experimental.
 - Script-service Python/dependency execution and live runner compatibility are unverified.
 - Custom role not created or granted.
 - Image delivery and portal template publication are open.

@@ -209,11 +209,15 @@ endpoint changes still need separate approval.
 
 ## Verified state
 
-Hosted agent `agent-harness` v4 is active (Responses 2.0.0). Verified through the Foundry endpoint:
+Hosted agent `agent-harness` v6 is active and serves production; the endpoint selector is pinned to
+it at 100% (Responses 2.0.0). Versions 4 (previous release, kept for rollback) and 5 (superseded
+candidate) remain. Verified through the Foundry endpoint:
 
-- Unauthenticated requests with forged identity headers return 401; client instruction overrides return 400.
-- Authenticated JSON and SSE requests complete with a registered tool result.
-- Application Insights shows correlated HTTP, agent, model and tool spans (counts only, no payloads).
+- Unauthenticated requests return 401; client instruction overrides return 400.
+- Authenticated JSON and SSE requests complete with a registered tool result. Streaming can return
+  a transient `model_provider_error` when sent immediately after another request and succeeds after a
+  short pause; the cause is unconfirmed (suspected model rate limit).
+- Application Insights shows correlated HTTP, agent, model and tool spans (operation names and token counts only, no payloads).
 - The container runs as UID 10001 and fails closed without platform configuration.
 - Local Agent Inspector service-health request was operator-confirmed; this is not hosted or trace-panel proof.
 

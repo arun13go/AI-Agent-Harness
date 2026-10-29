@@ -103,8 +103,9 @@ Evaluation and infrastructure folders are added only when their first working ar
   overrides fail; testing a separately unauthorized Entra principal remains pending.
 - **Container packaging:** Python 3.12 container assets and registry-only Bicep/ARM are available;
   follow the [Azure Dev guide](getting-started/azure-dev.md) for prerequisites and current limits.
-- **Azure deployment:** Foundry-hosted version 4 completes a governed tool request with metadata-only
-  HTTP/agent/model/tool traces, including streaming. Identity acceptance and full
+- **Azure deployment:** Foundry-hosted version 6 serves production and completes a governed tool request
+  with metadata-only HTTP/agent/model/tool traces, including streaming. Registration follows
+  [ADR 0016](decisions/0016-registration-outside-deployment-scripts.md). Identity acceptance and full
   deployment-path parity remain Phase 1D work.
 
 Use the implementation plan status table as the source of truth for future capabilities.

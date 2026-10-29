@@ -277,16 +277,27 @@ configuration, loopback readiness, and denial of instruction overrides without m
 129 deterministic tests, Pyright, Ruff, Bicep compilation, server-side ARM validation, azd preview,
 and local doctor checks pass. An image smoke test is not a Foundry-hosted identity proof.
 
-**Current Phase 1D state:** hosted agent v4 is active; JSON, SSE, tool calls and metadata-only
-cloud traces are verified. Unauthenticated forged-header (401) and instruction-override (400)
+**Current Phase 1D state:** hosted agent v6 is active and serves production; JSON, SSE, tool calls and
+metadata-only cloud traces are verified. Unauthenticated (401) and instruction-override (400)
 requests are rejected. A local Inspector request is operator-confirmed. The account is public
 (`publicNetworkAccess=Enabled`), not network-isolated. The agent is a Foundry data-plane resource,
-not a native ARM resource, so Deploy to Azure needs the optional
-[registration bridge](../getting-started/azure-dev.md#registration-bridge-optional-disabled-by-default)
-([ADR 0015](../decisions/0015-passwordless-hosted-deployment-bridge.md)).
+not a native ARM resource, so registration happens outside ARM
+([ADR 0016](../decisions/0016-registration-outside-deployment-scripts.md); the ADR 0015 bridge stays
+experimental).
 
-**Still open:** unauthorized-principal (403) and full ingress acceptance; complete canonical Bicep
-and portal artifact; the loopback authenticator is not deployable cloud authentication
+**Candidate release evidence (28-29 October 2026):** the endpoint was pinned to v4 before `azd deploy`
+(default routing is `@latest`, so a new version would otherwise take traffic immediately). v5
+(identical configuration, rebuilt image) could not be smoke-tested because the strict host rejected
+the platform `agent_session_id`; the host now accepts and strips only that routing field, with tests
+that `conversation`, stored state and overrides stay rejected. v6 passed JSON and SSE through a
+version-bound session with connected, payload-free traces, then was promoted at 100% and passed the
+same checks on the production path. Streaming sent immediately after another request failed with
+`model_provider_error` and passed after a pause (cause unconfirmed). 230 deterministic tests, Ruff and
+Pyright pass.
+
+**Still open:** unauthorized-principal (403) and full ingress acceptance; portal template publication
+and CI checks that ARM and `azd` outputs match; the streaming failure cause; the loopback
+authenticator is not deployable cloud authentication
 ([ADR 0010](../decisions/0010-stateless-governed-responses-host.md)).
 
 
@@ -321,16 +332,16 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 ## Current Next Step
 
-Continue **Phase 1D**. The registration bridge is implemented locally and disabled by default;
-it has not run in the cloud. Remaining gates:
+Continue **Phase 1D**. Registration follows [ADR 0016](../decisions/0016-registration-outside-deployment-scripts.md)
+(accepted): provision with either entry point, then `azd deploy` and a candidate-session smoke
+test. This was exercised in Azure Dev (v6). The ADR 0015 bridge stays disabled and has not run in
+the cloud. Remaining gates:
 
-- [ADR 0016](../decisions/0016-registration-outside-deployment-scripts.md) (accepted): register
-  outside deployment scripts, since shared keys stay disabled. Next: the documented registration
-  step, matching ARM/`azd` outputs and a bounded cloud parity test.
+- Unauthorized-principal (403) and full ingress acceptance.
+- Portal template publication and the Deploy to Azure leg of the parity run (same registration and smoke test).
+- Cause of the transient streaming `model_provider_error` (read-only model quota and rate-limit check).
 - Least-privilege custom role (project `agents/read` + `agents/write`), only if a managed-identity
   or workload-identity runner is adopted (ADR 0016, Phase 5).
-- Image delivery and portal template publication.
-- Unauthorized-principal (403) and full ingress acceptance.
 - Evaluation generation (deferred).
 
 Cloud resources, role assignments, publication and endpoint changes each need separate approval.

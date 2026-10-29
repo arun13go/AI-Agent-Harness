@@ -191,10 +191,17 @@ your own Entra identity. It needs no shared-key storage access and no new role g
    `AZURE_CONTAINER_REGISTRY_ENDPOINT`, `AZURE_AI_PROJECT_ID`, `AZURE_AI_PROJECT_ENDPOINT`,
    `FOUNDRY_PROJECT_ENDPOINT` and `AZURE_AI_MODEL_DEPLOYMENT_NAME`. `azd provision` records them itself.
 3. **Build and register.** Run `azd deploy` from the repository root. It builds remotely in ACR and
-   registers a hosted-agent version. Confirm which version serves traffic before relying on it;
-   this repo has not yet verified `azd deploy` routing behavior for a first deployment.
-4. **Smoke test.** Run the post-registration checks (JSON, SSE, tool call, traces) before treating
-   the environment as parity-proven. A successful ARM deployment is not that proof.
+   registers a hosted-agent version. `azd deploy` has no preview for hosted agents. In the dev
+   project the endpoint's version selector is `@latest` (100%), so a new version would serve traffic
+   immediately. Pin the serving version first (`azd ai agent endpoint update`) when you need a candidate.
+4. **Smoke test the candidate.** While production is pinned, create a session bound to the new
+   version (`azd ai agent sessions create agent-harness <version>`) and POST
+   `{"input": "...", "stream": false, "agent_session_id": "<id>"}` to the agent endpoint; repeat
+   with `"stream": true`. The host accepts and strips `agent_session_id` as routing metadata
+   and still rejects `conversation`, stored state and instruction overrides. `azd ai agent invoke`
+   sends a platform `conversation`, so it cannot exercise this stateless host. Check JSON, SSE,
+   tool call and traces before treating the environment as parity-proven. A successful ARM
+   deployment is not that proof.
 
 The required outputs are asserted by `tests/deployment`, and CI rejects drift between the Bicep and
 the generated ARM. The ADR 0015 bridge is not part of this path. Cloud resources, role grants and

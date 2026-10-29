@@ -107,6 +107,33 @@ async def test_platform_agent_reference_is_inert_routing_metadata(version: str |
     assert audit.events[-1].outcome == "succeeded"
 
 
+async def test_platform_session_id_is_inert_routing_metadata() -> None:
+    model = ScriptedToolClient()
+    app, audit = _compose(model)
+    async with _http(app) as http:
+        response = await http.post(
+            "/responses",
+            json={"input": "Check API status", "agent_session_id": "017bb37c7343bc2eSession_1-x"},
+        )
+    assert response.json()["status"] == "completed"
+    assert len(model.requests) == 2
+    assert audit.events[-1].outcome == "succeeded"
+    assert all("017bb37c7343bc2e" not in repr(event) for event in audit.events)
+
+
+@pytest.mark.parametrize("session_id", ["", "bad id", "x" * 129, "id;drop", 7])
+async def test_malformed_platform_session_id_is_rejected(session_id: object) -> None:
+    model = ScriptedToolClient()
+    app, audit = _compose(model)
+    async with _http(app) as http:
+        response = await http.post(
+            "/responses", json={"input": "Check API status", "agent_session_id": session_id}
+        )
+    assert response.status_code == 400
+    assert model.requests == []
+    assert audit.events == ()
+
+
 @pytest.mark.parametrize(
     "reference",
     [

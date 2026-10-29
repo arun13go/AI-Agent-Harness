@@ -97,6 +97,9 @@ class _CreateRequest(BaseModel):
     background: Literal[False] = False
     max_output_tokens: int = Field(default=1024, ge=1, le=4096)
     agent_reference: _AgentReference | None = None
+    agent_session_id: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9_-]{1,128}$", max_length=128
+    )
 
     def messages(self) -> tuple[Message, ...]:
         if isinstance(self.input, str):
@@ -225,6 +228,7 @@ class _RequestBoundary:
                 "temperature",
                 "top_p",
                 "agent_reference",
+                "agent_session_id",
                 "name",
                 "version",
             }
@@ -237,7 +241,7 @@ class _RequestBoundary:
                 _LOGGER.warning("HTTP schema rejection at fields: %s", ".".join(fields))
             await self._reject(scope, receive, send, 400, "invalid_request")
             return
-        normalized = body.model_dump_json(exclude={"agent_reference"}).encode()
+        normalized = body.model_dump_json(exclude={"agent_reference", "agent_session_id"}).encode()
         delivered = False
 
         async def replay() -> ASGIMessage:

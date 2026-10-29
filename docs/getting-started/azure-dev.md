@@ -220,7 +220,9 @@ candidate) remain. Verified through the Foundry endpoint:
   account was not used: it cannot test authorization (it fails at sign-in or with 401).
 - Authenticated JSON and SSE requests complete with a registered tool result. Streaming can return
   a transient `model_provider_error` when sent immediately after another request and succeeds after a
-  short pause; the cause is unconfirmed (suspected model rate limit).
+  short pause. The `gpt-5-mini` deployment has capacity 1 (1 request and 1,000 tokens per minute),
+  and a governed tool request makes two model calls, so back-to-back requests exceed it. Raise
+  deployment capacity before load or evaluation runs.
 - Application Insights shows correlated HTTP, agent, model and tool spans (operation names and token counts only, no payloads).
 - The container runs as UID 10001 and fails closed without platform configuration.
 - Local Agent Inspector service-health request was operator-confirmed; this is not hosted or trace-panel proof.

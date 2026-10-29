@@ -292,7 +292,10 @@ the platform `agent_session_id`; the host now accepts and strips only that routi
 that `conversation`, stored state and overrides stay rejected. v6 passed JSON and SSE through a
 version-bound session with connected, payload-free traces, then was promoted at 100% and passed the
 same checks on the production path. Streaming sent immediately after another request failed with
-`model_provider_error` and passed after a pause (cause unconfirmed). 230 deterministic tests, Ruff and
+`model_provider_error` and passed after a pause. The model deployment (`gpt-5-mini`, GlobalStandard)
+has capacity 1, i.e. 1 request and 1,000 tokens per 60 seconds, while one governed tool request
+makes two model calls and uses roughly 650-840 tokens; the failures are consistent with that limit
+(provider body not logged, by design). 230 deterministic tests, Ruff and
 Pyright pass.
 
 **Authorization evidence (29 October 2026):** a temporary service principal in the project's tenant
@@ -303,7 +306,8 @@ and tenant policy were not changed. This closes the unauthorized-principal gate;
 itself prove full ingress acceptance (no separate direct-container ingress target was identified).
 
 **Still open:** full ingress acceptance; portal template publication
-and CI checks that ARM and `azd` outputs match; the streaming failure cause; the loopback
+and CI checks that ARM and `azd` outputs match; raising model deployment capacity above 1 and
+distinguishing rate-limit errors from other provider errors; the loopback
 authenticator is not deployable cloud authentication
 ([ADR 0010](../decisions/0010-stateless-governed-responses-host.md)).
 
@@ -346,7 +350,8 @@ the cloud. Remaining gates:
 
 - Full ingress acceptance (the unauthorized-principal 403 check passed on 29 October 2026).
 - Portal template publication and the Deploy to Azure leg of the parity run (same registration and smoke test).
-- Cause of the transient streaming `model_provider_error` (read-only model quota and rate-limit check).
+- Model deployment capacity (currently 1 = 1 request and 1,000 tokens per minute, with regional
+  headroom available) and a distinct retryable rate-limit error instead of `model_provider_error`.
 - Least-privilege custom role (project `agents/read` + `agents/write`), only if a managed-identity
   or workload-identity runner is adopted (ADR 0016, Phase 5).
 - Evaluation generation (deferred).

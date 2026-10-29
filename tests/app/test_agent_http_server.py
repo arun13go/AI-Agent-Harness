@@ -9,7 +9,7 @@ from pathlib import Path
 import httpx
 import httpx2
 import pytest
-from agent_framework.exceptions import ChatClientInvalidAuthException
+from agent_framework.exceptions import ChatClientException, ChatClientInvalidAuthException
 from azure.ai.agentserver.responses import ResponsesAgentServerHost
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -491,6 +491,26 @@ async def test_normalized_provider_failure_does_not_leak_details() -> None:
     assert response.json()["error"]["code"] == "model_authentication_error"
     assert "SECRET" not in response.text
     assert audit.events[-1].event_type == "run.failed"
+
+
+@pytest.mark.parametrize("stream", [False, True])
+async def test_provider_rate_limit_is_reported_as_retryable_code_without_details(
+    stream: bool,
+) -> None:
+    class ThrottledProviderError(Exception):
+        status_code = 429
+
+    provider = ThrottledProviderError("SECRET throttle body")
+    wrapper = ChatClientException("client failed", inner_exception=provider)
+    wrapper.__cause__ = provider
+    app, audit = _compose(FailingClient(wrapper))
+    async with _http(app) as http:
+        response = await http.post("/responses", json={"input": "Hi", "stream": stream})
+    assert response.status_code == 200
+    assert "model_rate_limited" in response.text
+    assert "model_provider_error" not in response.text
+    assert "SECRET" not in response.text
+    assert audit.events[-1].attributes == {"errorCode": "model_rate_limited"}
 
 
 async def test_cancelling_http_request_cancels_model_and_audits() -> None:

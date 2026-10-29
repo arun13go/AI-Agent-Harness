@@ -352,7 +352,8 @@ the cloud. Remaining gates:
 
 - Full ingress acceptance (the unauthorized-principal 403 check passed on 29 October 2026).
 - Portal template publication and the Deploy to Azure leg of the parity run (same registration and smoke test).
-- A distinct retryable rate-limit error instead of `model_provider_error` (model capacity is now 10).
+- Ship the distinct retryable `model_rate_limited` error (implemented and tested locally; replaces
+  `model_provider_error` for provider throttling) in the next hosted version; model capacity is now 10.
 - Least-privilege custom role (project `agents/read` + `agents/write`), only if a managed-identity
   or workload-identity runner is adopted (ADR 0016, Phase 5).
 - Evaluation generation (deferred).

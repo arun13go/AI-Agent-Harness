@@ -22,7 +22,7 @@ from agent_framework import (
 from agent_framework import (
     Message as MafMessage,
 )
-from agent_framework.exceptions import ChatClientInvalidAuthException
+from agent_framework.exceptions import ChatClientException, ChatClientInvalidAuthException
 from opentelemetry import trace
 
 from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
@@ -32,8 +32,11 @@ from agent_harness.adapters.tools.service_status import ServiceStatusTool
 from agent_harness.core.configuration import load_harness_config
 from agent_harness.core.contracts import Tool
 from agent_harness.core.errors import (
+    HarnessError,
     InputValidationError,
     ModelAuthenticationError,
+    ModelProviderError,
+    ModelRateLimitError,
     ModelTimeoutError,
 )
 from agent_harness.core.registry import Registry
@@ -432,6 +435,71 @@ async def test_model_authentication_error_is_normalized_and_audited() -> None:
         "run.failed",
     ]
     assert audit.events[-1].attributes == {"errorCode": "model_authentication_error"}
+
+
+class _HttpStatusProviderError(Exception):
+    status_code = 429
+
+
+class _CodedProviderError(Exception):
+    def __init__(self, code: str | None, error_type: str | None = None) -> None:
+        super().__init__("provider detail with sensitive text")
+        self.code = code
+        self.type = error_type
+
+
+def _chained(provider_error: Exception) -> ChatClientException:
+    wrapper = ChatClientException("client failed", inner_exception=provider_error)
+    wrapper.__cause__ = provider_error
+    return wrapper
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("raised", "expected_type", "expected_code"),
+    [
+        (_chained(_HttpStatusProviderError("429")), ModelRateLimitError, "model_rate_limited"),
+        (
+            _chained(_CodedProviderError("rate_limit_exceeded")),
+            ModelRateLimitError,
+            "model_rate_limited",
+        ),
+        (
+            _chained(_CodedProviderError(None, "too_many_requests")),
+            ModelRateLimitError,
+            "model_rate_limited",
+        ),
+        (_HttpStatusProviderError("429"), ModelRateLimitError, "model_rate_limited"),
+        (_chained(_CodedProviderError("server_error")), ModelProviderError, "model_provider_error"),
+        (ChatClientException("plain failure"), ModelProviderError, "model_provider_error"),
+    ],
+)
+async def test_provider_rate_limit_is_distinct_and_sanitized(
+    raised: Exception, expected_type: type[HarnessError], expected_code: str
+) -> None:
+    config = load_harness_config(
+        ROOT / "config" / "profiles" / "assistant.yaml",
+        CONFIG_SCHEMA,
+    )
+    tools = Registry[Tool]("tool")
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    context = make_context()
+    runtime = MafAgentExecutor(
+        config=config,
+        client=FailingClient(raised),
+        tools=tools,
+        audit_sink=audit,
+    )
+
+    with pytest.raises(expected_type) as caught:
+        await runtime.run(
+            authenticated_identity=context.identity,
+            request=make_request(context, tools),
+        )
+
+    assert caught.value.code == expected_code
+    assert "sensitive" not in caught.value.message
+    assert audit.events[-1].attributes == {"errorCode": expected_code}
 
 
 @pytest.mark.asyncio

@@ -53,6 +53,7 @@ from agent_harness.core.errors import (
     ModelContentFilterError,
     ModelInvalidRequestError,
     ModelProviderError,
+    ModelRateLimitError,
     ModelTimeoutError,
 )
 from agent_harness.core.event_writer import RunEventWriter
@@ -484,6 +485,30 @@ class MafAgentExecutor:
         )
 
 
+def _is_provider_rate_limit(error: BaseException) -> bool:
+    """Detect a provider throttle without importing a provider SDK or exposing its body."""
+
+    pending: list[BaseException] = [error]
+    seen: set[int] = set()
+    while pending and len(seen) < 8:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if (
+            getattr(current, "status_code", None) == 429
+            or getattr(current, "code", None) == "rate_limit_exceeded"
+            or getattr(current, "type", None) == "too_many_requests"
+        ):
+            return True
+        pending.extend(
+            candidate
+            for candidate in (current.__cause__, current.__context__, *current.args)
+            if isinstance(candidate, BaseException)
+        )
+    return False
+
+
 def _normalize_model_error(error: Exception) -> HarnessError:
     if isinstance(error, ChatClientInvalidAuthException):
         return ModelAuthenticationError("Model authentication failed")
@@ -493,6 +518,8 @@ def _normalize_model_error(error: Exception) -> HarnessError:
         return ModelContentFilterError("Model content filtering blocked the request")
     if isinstance(error, TimeoutError):
         return ModelTimeoutError("Model request exceeded its deadline")
+    if _is_provider_rate_limit(error):
+        return ModelRateLimitError("Model rate limit reached; retry later")
     if isinstance(error, AgentFrameworkException):
         return ModelProviderError("Agent Framework model execution failed")
     return ModelProviderError("Model provider execution failed")

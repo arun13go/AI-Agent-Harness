@@ -73,6 +73,12 @@ class ModelProviderError(ModelError):
     code = "model_provider_error"
 
 
+class ModelRateLimitError(ModelError):
+    """The model provider throttled the request; callers may retry later."""
+
+    code = "model_rate_limited"
+
+
 class ActionLifecycleError(HarnessError):
     code = "action_lifecycle_error"
 

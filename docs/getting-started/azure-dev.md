@@ -214,6 +214,10 @@ it at 100% (Responses 2.0.0). Versions 4 (previous release, kept for rollback) a
 candidate) remain. Verified through the Foundry endpoint:
 
 - Unauthenticated requests return 401; client instruction overrides return 400.
+- A temporary in-tenant service principal with zero role assignments obtained a token and received
+  403 (`UserError`) for both JSON and streaming requests; no `harness.http` span appeared, so the
+  platform denied it before the container. The principal was deleted afterward. A foreign-tenant
+  account was not used: it cannot test authorization (it fails at sign-in or with 401).
 - Authenticated JSON and SSE requests complete with a registered tool result. Streaming can return
   a transient `model_provider_error` when sent immediately after another request and succeeds after a
   short pause; the cause is unconfirmed (suspected model rate limit).
@@ -221,7 +225,7 @@ candidate) remain. Verified through the Foundry endpoint:
 - The container runs as UID 10001 and fails closed without platform configuration.
 - Local Agent Inspector service-health request was operator-confirmed; this is not hosted or trace-panel proof.
 
-Open: unauthorized-principal (403) test, full ingress acceptance, evaluation, and `azd`/Deploy to Azure parity.
+Open: full ingress acceptance, evaluation, and `azd`/Deploy to Azure parity.
 The account uses `publicNetworkAccess=Enabled` and `disableLocalAuth=true`; it is not network-isolated.
 Customer identifiers and run IDs stay in ignored local evidence.
 

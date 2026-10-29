@@ -295,7 +295,14 @@ same checks on the production path. Streaming sent immediately after another req
 `model_provider_error` and passed after a pause (cause unconfirmed). 230 deterministic tests, Ruff and
 Pyright pass.
 
-**Still open:** unauthorized-principal (403) and full ingress acceptance; portal template publication
+**Authorization evidence (29 October 2026):** a temporary service principal in the project's tenant
+with zero role assignments obtained a token and received 403 from the Foundry endpoint for JSON and
+streaming requests. No `harness.http` span was recorded, so the platform rejected it before the
+container. The principal and its secret were deleted (verified through Graph). Operator credentials
+and tenant policy were not changed. This closes the unauthorized-principal gate; it does not by
+itself prove full ingress acceptance (no separate direct-container ingress target was identified).
+
+**Still open:** full ingress acceptance; portal template publication
 and CI checks that ARM and `azd` outputs match; the streaming failure cause; the loopback
 authenticator is not deployable cloud authentication
 ([ADR 0010](../decisions/0010-stateless-governed-responses-host.md)).
@@ -337,7 +344,7 @@ Continue **Phase 1D**. Registration follows [ADR 0016](../decisions/0016-registr
 test. This was exercised in Azure Dev (v6). The ADR 0015 bridge stays disabled and has not run in
 the cloud. Remaining gates:
 
-- Unauthorized-principal (403) and full ingress acceptance.
+- Full ingress acceptance (the unauthorized-principal 403 check passed on 29 October 2026).
 - Portal template publication and the Deploy to Azure leg of the parity run (same registration and smoke test).
 - Cause of the transient streaming `model_provider_error` (read-only model quota and rate-limit check).
 - Least-privilege custom role (project `agents/read` + `agents/write`), only if a managed-identity

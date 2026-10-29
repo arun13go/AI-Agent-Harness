@@ -99,8 +99,9 @@ Evaluation and infrastructure folders are added only when their first working ar
   [HTTP code tour](getting-started/code-tour.md#phase-1d-http-path).
 - **Hosted identity:** a single-tenant Foundry ingress adapter relies on endpoint RBAC and binds
   pseudonymous subjects. Guarded hosted startup and outbound call-ID forwarding are
-  tested. Live invocation succeeds, unauthenticated forged headers fail, and instruction
-  overrides fail; testing a separately unauthorized Entra principal remains pending.
+  tested. Live invocation succeeds, unauthenticated forged headers fail, instruction
+  overrides fail, and an in-tenant principal with no project role receives 403 from the platform;
+  full ingress acceptance remains pending.
 - **Container packaging:** Python 3.12 container assets and registry-only Bicep/ARM are available;
   follow the [Azure Dev guide](getting-started/azure-dev.md) for prerequisites and current limits.
 - **Azure deployment:** Foundry-hosted version 6 serves production and completes a governed tool request

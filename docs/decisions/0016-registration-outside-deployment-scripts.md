@@ -63,4 +63,4 @@ a green deployment would not prove registration. It also needs a runner image, w
   `azd` outputs match.
 - Image delivery and portal template publication.
 - Least-privilege registration role, if Option B is later adopted (Phase 5).
-- Unauthorized-principal (403) and full ingress acceptance.
+- Full ingress acceptance (unauthorized-principal 403 passed on 29 October 2026).

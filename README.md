@@ -14,8 +14,8 @@ Foundry for models, evaluation, and tracing instead of creating another agent ru
 > The guarded hosted entry point binds one deployment tenant with Foundry endpoint RBAC and
 > request-scoped Foundry call-ID forwarding. Python 3.12 container packaging and registry
 > infrastructure and metadata-only Application Insights export are available. Live checks reject
-> unauthenticated forged headers and instruction overrides. Unauthorized-principal and full
-> ingress acceptance remain open.
+> unauthenticated forged headers and instruction overrides, and the platform denies (403) an
+> in-tenant principal with no project role. Full ingress acceptance remains open.
 
 ## Understand it in two minutes
 

@@ -307,9 +307,25 @@ container. The principal and its secret were deleted (verified through Graph). O
 and tenant policy were not changed. This closes the unauthorized-principal gate; it does not by
 itself prove full ingress acceptance (no separate direct-container ingress target was identified).
 
-**Still open:** full ingress acceptance; portal template publication
-and CI checks that ARM and `azd` outputs match; distinguishing rate-limit errors from other provider
-errors; the loopback
+**Ingress and parity evidence (29 October 2026):** read-only probes of the production endpoint found
+no way in other than the platform-owned, Entra-authenticated agent endpoint. No credential: 401; an
+`api-key` header (local auth is disabled): 401; a malformed bearer token: 403; a roleless in-tenant
+principal: 403. With a valid token, only `POST /responses` reaches the harness: other paths, the
+`invocations` and `a2a` protocols (not enabled) and the project-level OpenAI route (hosted agents
+"can only be called through the agent endpoint") are rejected, and `GET` on the responses route
+returns an empty list because the stateless host stores nothing. A forged `x-ms-user-identity`
+header is rejected (403, fail closed); other forged identity headers do not change the outcome. No
+direct-container ingress exists in the project or version definition (compute is platform
+managed). Caveats: the account is public (`publicNetworkAccess=Enabled`), so network isolation is a
+Phase 5 production overlay, and the subject binding is verified by rejection, not by reading
+telemetry (it is metadata-only by design). For parity, `infra/main.json` is published at its public
+raw URL (identical hash), the README button targets it (a test pins the URL), and a read-only
+`what-if` of that artifact against the `azd`-provisioned environment targets the same registry,
+connection and role assignment; its differences were service-populated defaults. This is not yet a
+live ARM deployment.
+
+**Still open:** a live Deploy to Azure deployment of the published template with matching outputs
+(creates cloud resources; needs approval); the loopback
 authenticator is not deployable cloud authentication
 ([ADR 0010](../decisions/0010-stateless-governed-responses-host.md)).
 
@@ -350,10 +366,12 @@ Continue **Phase 1D**. Registration follows [ADR 0016](../decisions/0016-registr
 test. This was exercised in Azure Dev (v6). The ADR 0015 bridge stays disabled and has not run in
 the cloud. Remaining gates:
 
-- Full ingress acceptance (the unauthorized-principal 403 check passed on 29 October 2026).
-- Portal template publication and the Deploy to Azure leg of the parity run (same registration and smoke test).
-- Ship the distinct retryable `model_rate_limited` error (implemented and tested locally; replaces
-  `model_provider_error` for provider throttling) in the next hosted version; model capacity is now 10.
+- Full ingress acceptance is complete for Azure Dev (see the 29 October evidence); private networking
+  is a Phase 5 overlay.
+- A live Deploy to Azure deployment of the published template with outputs matching `azd`
+  (needs approval).
+- Promote hosted v7, which ships the distinct retryable `model_rate_limited` error (deployed as a
+  candidate and smoke-tested; production serves v6); model capacity is now 10.
 - Least-privilege custom role (project `agents/read` + `agents/write`), only if a managed-identity
   or workload-identity runner is adopted (ADR 0016, Phase 5).
 - Evaluation generation (deferred).

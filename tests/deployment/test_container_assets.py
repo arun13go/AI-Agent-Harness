@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
+from urllib.parse import unquote
 
 import yaml
 
@@ -103,3 +105,17 @@ def test_template_exposes_outputs_needed_by_shared_registration_step() -> None:
         "AZURE_AI_MODEL_DEPLOYMENT_NAME",
     }
     assert required <= set(template["outputs"])
+
+
+def test_deploy_to_azure_button_targets_the_generated_subscription_template() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    prefix = "https://portal.azure.com/#create/Microsoft.Template/uri/"
+    buttons = re.findall(re.escape(prefix) + r"([^)\s]+)\)", readme)
+    assert len(buttons) == 1
+    target = unquote(buttons[0])
+    assert target == (
+        "https://raw.githubusercontent.com/arun13go/AI-Agent-Harness/main/infra/main.json"
+    )
+    assert (ROOT / target.rsplit("/main/", 1)[1]).is_file()
+    template = json.loads((ROOT / "infra/main.json").read_text())
+    assert template["$schema"].endswith("subscriptionDeploymentTemplate.json#")

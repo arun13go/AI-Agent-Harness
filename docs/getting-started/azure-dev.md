@@ -185,7 +185,12 @@ provisioning nor Deploy to Azure registers an agent. Both create the same infras
 outputs; one shared step then builds the image in ACR and registers a hosted-agent version with
 your own Entra identity. It needs no shared-key storage access and no new role grants for the harness.
 
-1. **Provision.** Use either `azd provision` or the **Deploy to Azure** button.
+1. **Provision.** Use either `azd provision` or the **Deploy to Azure** button in the
+   [README](../../README.md#deploy-to-azure). With the same `environmentName`, subscription and
+   resource group, both paths resolve to the same registry, project connection and role assignment
+   (the registry name is derived from those three values). A read-only `az deployment sub what-if`
+   of `infra/main.json` against the `azd`-provisioned environment targeted those same resources;
+   its only differences were service-populated defaults.
 2. **Record outputs (portal path only).** Copy these deployment outputs into the azd environment
    (`azd env set <name> <value>`): `AZURE_RESOURCE_GROUP`, `AZURE_CONTAINER_REGISTRY_NAME`,
    `AZURE_CONTAINER_REGISTRY_ENDPOINT`, `AZURE_AI_PROJECT_ID`, `AZURE_AI_PROJECT_ENDPOINT`,
@@ -224,6 +229,9 @@ candidate) remain. Verified through the Foundry endpoint:
   was raised to 10 and four consecutive requests then passed. Size deployment capacity for expected
   load and evaluation runs.
 - Application Insights shows correlated HTTP, agent, model and tool spans (operation names and token counts only, no payloads).
+- A distinct `model_rate_limited` code is implemented; it reaches production when v7 is promoted.
+- Read-only ingress probes found only the platform-owned Entra-authenticated endpoint; see the
+  [implementation plan](../delivery/implementation-plan.md) for the full matrix.
 - The container runs as UID 10001 and fails closed without platform configuration.
 - Local Agent Inspector service-health request was operator-confirmed; this is not hosted or trace-panel proof.
 

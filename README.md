@@ -130,8 +130,19 @@ VS Code's process. Live Inspector compatibility is still pending validation; see
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the supported workflow and dependency-update policy.
 
 For Foundry Hosted Agents container deployment, see the
-[Azure Dev container guide](docs/getting-started/azure-dev.md). The registry template reuses an
-existing project and model; it does not yet provide the complete Phase 1D deployment topology.
+[Azure Dev container guide](docs/getting-started/azure-dev.md). The template reuses an existing
+Foundry project and model and provisions the registry prerequisites.
+
+### Deploy to Azure
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Farun13go%2FAI-Agent-Harness%2Fmain%2Finfra%2Fmain.json)
+
+The button deploys [`infra/main.json`](infra/main.json), generated from the same Bicep that `azd`
+uses, at subscription scope. It needs an existing Foundry account, project and model deployment.
+It provisions infrastructure only; registering the agent is the shared step in the
+[Azure Dev guide](docs/getting-started/azure-dev.md#register-the-hosted-agent-both-entry-points)
+([ADR 0016](docs/decisions/0016-registration-outside-deployment-scripts.md)). The button follows
+`main`; fork the repository and change the encoded URL to deploy a fork or a pinned commit.
 
 ## Profiles
 

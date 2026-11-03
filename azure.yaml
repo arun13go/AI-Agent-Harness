@@ -21,6 +21,12 @@ services:
     protocols:
       - protocol: responses
         version: 2.0.0
+    agentEndpoint:
+      versionSelector:
+        versionSelectionRules:
+          - type: FixedRatio
+            agentVersion: "7"
+            trafficPercentage: 100
     container:
       resources:
         cpu: "1"

@@ -104,7 +104,7 @@ class HostedAgentRelease(BaseModel):
         """Reject manifest drift and a model selection inconsistent with this release."""
 
         expected = self.azd_service_settings()
-        allowed = set(expected) | {"project", "description", "docker"}
+        allowed = set(expected) | {"project", "description", "docker", "agentEndpoint"}
         if set(service) - allowed:
             raise ConfigurationError("Unsupported hosted azd service settings")
         for key, value in expected.items():

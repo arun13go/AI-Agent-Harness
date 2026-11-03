@@ -7,15 +7,16 @@ Foundry for models, evaluation, and tracing instead of creating another agent ru
 > **Current status:** Phase 1C is complete with an approved live-test model exception. The governed
 > MAF-to-Foundry CLI selected a registered tool with correlated model and tool traces; streaming
 > conformance also passes. The proof used `gpt-5-mini` because reference-model quota was unavailable.
-> Phase 1D is in progress: the released Responses HTTP host has deterministic conformance tests
-> and a local socket smoke proof. Foundry-hosted version 6 (serving production) completed live governed
-> tool requests with correlated HTTP, agent, model, and tool traces, including streaming. Full
-> deployment-path parity remains pending.
+> Phase 1D is complete in Azure Dev: the released Responses HTTP host has deterministic conformance
+> tests and a local socket smoke proof. Foundry-hosted version 7 serves 100% of production traffic
+> and completed live governed tool requests with correlated HTTP, agent, model, and tool traces,
+> including streaming. The live subscription-scope ARM deployment succeeded with outputs matching
+> the azd environment, completing the two-path infrastructure parity proof.
 > The guarded hosted entry point binds one deployment tenant with Foundry endpoint RBAC and
 > request-scoped Foundry call-ID forwarding. Python 3.12 container packaging and registry
 > infrastructure and metadata-only Application Insights export are available. Live checks reject
 > unauthenticated forged headers and instruction overrides, and the platform denies (403) an
-> in-tenant principal with no project role. Full ingress acceptance remains open.
+> in-tenant principal with no project role.
 
 ## Understand it in two minutes
 

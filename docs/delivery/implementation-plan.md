@@ -24,7 +24,7 @@ adapter expectations.
 | 1A | Governance and read path foundation | Complete |
 | 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
-| 1D | Azure Dev deployment | In progress (hosted smoke passes; local Inspector request operator-confirmed) |
+| 1D | Azure Dev deployment | Complete |
 | 2 | Grounded-assistant profile | Not started |
 | 3 | Durable Azure adapters | Not started |
 | 4 | Evaluation and operations | Not started |
@@ -277,7 +277,7 @@ configuration, loopback readiness, and denial of instruction overrides without m
 129 deterministic tests, Pyright, Ruff, Bicep compilation, server-side ARM validation, azd preview,
 and local doctor checks pass. An image smoke test is not a Foundry-hosted identity proof.
 
-**Current Phase 1D state:** hosted agent v6 is active and serves production; JSON, SSE, tool calls and
+**Current Phase 1D state:** hosted agent v7 is active and serves production; JSON, SSE, tool calls and
 metadata-only cloud traces are verified. Unauthenticated (401) and instruction-override (400)
 requests are rejected. A local Inspector request is operator-confirmed. The account is public
 (`publicNetworkAccess=Enabled`), not network-isolated. The agent is a Foundry data-plane resource,
@@ -321,12 +321,16 @@ Phase 5 production overlay, and the subject binding is verified by rejection, no
 telemetry (it is metadata-only by design). For parity, `infra/main.json` is published at its public
 raw URL (identical hash), the README button targets it (a test pins the URL), and a read-only
 `what-if` of that artifact against the `azd`-provisioned environment targets the same registry,
-connection and role assignment; its differences were service-populated defaults. This is not yet a
-live ARM deployment.
+connection and role assignment; its differences were service-populated defaults.
 
-**Still open:** a live Deploy to Azure deployment of the published template with matching outputs
-(creates cloud resources; needs approval); the loopback
-authenticator is not deployable cloud authentication
+**Promotion and live parity evidence (3 November 2026):** a fresh version-bound governed tool
+request completed successfully against v7. The endpoint selector was then changed to v7 at 100%;
+the production path returned a completed healthy service-status response. With explicit operator
+approval, the published subscription-scope ARM template deployed successfully against the same
+Azure Dev environment. All eight infrastructure outputs matched the azd environment, the
+registration bridge remained disabled, the existing Basic ACR retained disabled admin and
+anonymous access, the project retained one registry-scoped `AcrPull` assignment, and the
+post-deployment governed production smoke passed. The loopback authenticator remains local-only
 ([ADR 0010](../decisions/0010-stateless-governed-responses-host.md)).
 
 
@@ -361,20 +365,15 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 ## Current Next Step
 
-Continue **Phase 1D**. Registration follows [ADR 0016](../decisions/0016-registration-outside-deployment-scripts.md)
-(accepted): provision with either entry point, then `azd deploy` and a candidate-session smoke
-test. This was exercised in Azure Dev (v6). The ADR 0015 bridge stays disabled and has not run in
-the cloud. Remaining gates:
+Begin **Phase 2: Grounding and context** with a thin deterministic slice for retrieval contracts,
+source-aware evidence, citations, freshness, and the answerability gate. Phase 1D is complete in
+Azure Dev: v7 serves 100%, both infrastructure entry points have matching live outputs, and the
+shared post-provision smoke passes. The ADR 0015 bridge stays disabled and has not run in the
+cloud.
 
-- Full ingress acceptance is complete for Azure Dev (see the 29 October evidence); private networking
-  is a Phase 5 overlay.
-- A live Deploy to Azure deployment of the published template with outputs matching `azd`
-  (needs approval).
-- Promote hosted v7, which ships the distinct retryable `model_rate_limited` error (deployed as a
-  candidate and smoke-tested; production serves v6); model capacity is now 10.
-- Least-privilege custom role (project `agents/read` + `agents/write`), only if a managed-identity
-  or workload-identity runner is adopted (ADR 0016, Phase 5).
-- Evaluation generation (deferred).
+Phase 5 retains the production hardening follow-ups: private networking and a least-privilege
+registration role if a managed-identity or workload-identity runner is adopted. Evaluation
+generation remains Phase 4 work.
 
 Cloud resources, role assignments, publication and endpoint changes each need separate approval.
 See [ADR 0009](../decisions/0009-defer-agent-inspector-to-http-host.md) and

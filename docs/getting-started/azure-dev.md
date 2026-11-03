@@ -214,9 +214,9 @@ endpoint changes still need separate approval.
 
 ## Verified state
 
-Hosted agent `agent-harness` v6 is active and serves production; the endpoint selector is pinned to
-it at 100% (Responses 2.0.0). Versions 4 (previous release, kept for rollback) and 5 (superseded
-candidate) remain. Verified through the Foundry endpoint:
+Hosted agent `agent-harness` v7 is active and serves 100% of production traffic through Responses
+2.0.0. Version 6 is retained as the previous stable release. Verified through the Foundry endpoint
+and live ARM deployment:
 
 - Unauthenticated requests return 401; client instruction overrides return 400.
 - A temporary in-tenant service principal with zero role assignments obtained a token and received
@@ -229,13 +229,15 @@ candidate) remain. Verified through the Foundry endpoint:
   was raised to 10 and four consecutive requests then passed. Size deployment capacity for expected
   load and evaluation runs.
 - Application Insights shows correlated HTTP, agent, model and tool spans (operation names and token counts only, no payloads).
-- A distinct `model_rate_limited` code is implemented; it reaches production when v7 is promoted.
+- Provider throttling is reported as the distinct retryable `model_rate_limited` error.
 - Read-only ingress probes found only the platform-owned Entra-authenticated endpoint; see the
   [implementation plan](../delivery/implementation-plan.md) for the full matrix.
 - The container runs as UID 10001 and fails closed without platform configuration.
 - Local Agent Inspector service-health request was operator-confirmed; this is not hosted or trace-panel proof.
+- The published subscription-scope ARM template deployed successfully on 3 November 2026. All
+  eight infrastructure outputs matched azd, the registration bridge stayed disabled, registry and
+  RBAC invariants held, and the post-deployment governed production smoke passed.
 
-Open: full ingress acceptance, evaluation, and `azd`/Deploy to Azure parity.
 The account uses `publicNetworkAccess=Enabled` and `disableLocalAuth=true`; it is not network-isolated.
 Customer identifiers and run IDs stay in ignored local evidence.
 

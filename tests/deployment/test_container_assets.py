@@ -27,6 +27,17 @@ def test_manifest_selects_foundry_container_protocol_and_runtime_environment() -
         "remoteBuild": True,
     }
     assert service["protocols"] == [{"protocol": "responses", "version": "2.0.0"}]
+    assert service["agentEndpoint"] == {
+        "versionSelector": {
+            "versionSelectionRules": [
+                {
+                    "type": "FixedRatio",
+                    "agentVersion": "7",
+                    "trafficPercentage": 100,
+                }
+            ]
+        }
+    }
     variables = {item["name"]: item["value"] for item in service["environmentVariables"]}
     assert "HARNESS_ALLOWED_FOUNDRY_USERS" not in variables
     assert variables["AZURE_AI_MODEL_DEPLOYMENT_NAME"] == "${AZURE_AI_MODEL_DEPLOYMENT_NAME}"

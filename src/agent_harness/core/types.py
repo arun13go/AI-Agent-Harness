@@ -39,6 +39,29 @@ class IdempotencyStatus(StrEnum):
     OUTCOME_UNKNOWN = "outcome-unknown"
 
 
+class EvidenceFlag(StrEnum):
+    CONFLICTING = "conflicting"
+    MALICIOUS = "malicious"
+
+
+class AnswerabilityRoute(StrEnum):
+    ANSWER = "answer"
+    RETRIEVE_AGAIN = "retrieve-again"
+    CLARIFY = "clarify"
+    CAVEAT = "caveat"
+    ABSTAIN = "abstain"
+    ESCALATE = "escalate"
+
+
+class AnswerabilityReason(StrEnum):
+    SUFFICIENT = "sufficient"
+    MISSING = "missing"
+    WEAK = "weak"
+    STALE = "stale"
+    CONFLICTING = "conflicting"
+    MALICIOUS = "malicious"
+
+
 @dataclass(frozen=True, slots=True)
 class IdentityScope:
     tenant_scope: str
@@ -105,7 +128,8 @@ class SourceReference:
     source_id: str
     source_version: str
     structural_path: str
-    retrieved_at: datetime
+    ingested_at: datetime
+    fresh_until: datetime
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +138,25 @@ class RetrievedItem:
     content: str
     score: float
     source: SourceReference
+    tenant_scope: str
+    authorization_labels: tuple[str, ...]
+    retrieved_at: datetime | None = None
+    evidence_flags: tuple[EvidenceFlag, ...] = ()
     source_label: str = "untrusted-retrieved-content"
+
+
+@dataclass(frozen=True, slots=True)
+class Citation:
+    source_id: str
+    source_version: str
+    structural_path: str
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerabilityDecision:
+    route: AnswerabilityRoute
+    reasons: tuple[AnswerabilityReason, ...]
+    citations: tuple[Citation, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

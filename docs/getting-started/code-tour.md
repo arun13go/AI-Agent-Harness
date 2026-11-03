@@ -63,8 +63,9 @@ Change the decision to `denied` to confirm that the effect count remains zero.
 
 | File | What it does | Main users |
 |---|---|---|
-| [`types.py`](../../src/agent_harness/core/types.py) | Defines identity, requests, tools, proposals, approvals, checkpoints, state, and events | All runners and adapters |
-| [`contracts.py`](../../src/agent_harness/core/contracts.py) | Defines interfaces that tools, stores, model clients, and exporters must implement | Runners and adapters |
+| [`types.py`](../../src/agent_harness/core/types.py) | Defines identity, requests, tools, proposals, approvals, checkpoints, state, events, retrieved evidence, citations, and answerability decisions | All runners and adapters |
+| [`contracts.py`](../../src/agent_harness/core/contracts.py) | Defines interfaces that tools, stores, model clients, retrieval providers, answerability policies, and exporters must implement | Runners and adapters |
+| [`answerability.py`](../../src/agent_harness/core/answerability.py) | Applies deterministic safe routes to sufficient, weak, stale, conflicting, malicious, or missing evidence | Grounded application composition |
 | [`configuration.py`](../../src/agent_harness/core/configuration.py) | Loads YAML, validates JSON Schema, and returns immutable typed settings | CLI composition |
 | [`registry.py`](../../src/agent_harness/core/registry.py) | Resolves trusted implementations by explicit name; rejects unknown or duplicate names | Read and action runners |
 | [`governance.py`](../../src/agent_harness/core/governance.py) | Checks identity, deadline, permission tier, tool input, and execution limits | Read and action runners |
@@ -80,6 +81,7 @@ Change the decision to `denied` to confirm that the effect count remains zero.
 | [`maintenance_request.py`](../../src/agent_harness/adapters/tools/maintenance_request.py) | Implements a proposal tool and an idempotent act-tier sample tool | Customer proposal and action tools |
 | [`in_memory_audit.py`](../../src/agent_harness/adapters/storage/in_memory_audit.py) | Validates and stores ordered audit events | Durable audit adapter |
 | [`in_memory_action_stores.py`](../../src/agent_harness/adapters/storage/in_memory_action_stores.py) | Stores proposals, artifacts, checkpoints, approvals, run state, and idempotency records | Azure adapters in Phase 3 |
+| [`retrieval/in_memory.py`](../../src/agent_harness/adapters/retrieval/in_memory.py) | Provides tenant- and authorization-filtered deterministic retrieval while preserving source lineage and untrusted labels | Azure AI Search reference adapter |
 | [`maf/agent_executor.py`](../../src/agent_harness/adapters/maf/agent_executor.py) | Executes released MAF agents with code-owned registry, governance, limits, source labels, audit, and trace correlation | MAF runtime adapter |
 | [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py) | Resolves environment references and creates the passwordless, bounded Foundry chat client | Foundry model adapter |
 
@@ -320,6 +322,7 @@ controls.
 | [`test_cli.py`](../../tests/app/test_cli.py) | Application composition |
 | [`test_agent_executor.py`](../../tests/adapters/maf/test_agent_executor.py) | MAF tool selection, source labels, trace correlation, failure normalization, cancellation, and act-tier fail-closed behavior |
 | [`test_model_client.py`](../../tests/adapters/foundry/test_model_client.py) | Foundry environment validation and code-owned invocation ceilings |
+| [`test_grounding.py`](../../tests/conformance/test_grounding.py) | Retrieval isolation, source lineage, freshness, untrusted labels, citations, and answerability routes |
 | [`test_schemas.py`](../../tests/schema/test_schemas.py) | Configuration or event schemas |
 
 ## Common Extension Paths

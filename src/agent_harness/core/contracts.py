@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping, Sequence
+from datetime import datetime
 from typing import Protocol
 
 from agent_harness.core.types import (
     ActionProposal,
+    AnswerabilityDecision,
     ApprovalRequest,
     ApprovalResult,
     ArtifactRecord,
@@ -40,6 +42,7 @@ class RetrievalProvider(Protocol):
         self,
         *,
         identity: IdentityScope,
+        authorization_labels: Sequence[str],
         query: str,
         limit: int,
     ) -> Sequence[RetrievedItem]: ...
@@ -63,6 +66,16 @@ class ContextPolicy(Protocol):
         evidence: Sequence[RetrievedItem],
         maximum_tokens: int,
     ) -> Sequence[Message]: ...
+
+
+class AnswerabilityPolicy(Protocol):
+    def assess(
+        self,
+        *,
+        evidence: Sequence[RetrievedItem],
+        now: datetime,
+        retrieval_attempt: int,
+    ) -> AnswerabilityDecision: ...
 
 
 class MemoryStore(Protocol):

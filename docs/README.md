@@ -101,12 +101,16 @@ Evaluation and infrastructure folders are added only when their first working ar
   pseudonymous subjects. Guarded hosted startup and outbound call-ID forwarding are
   tested. Live invocation succeeds, unauthenticated forged headers fail, instruction
   overrides fail, and an in-tenant principal with no project role receives 403 from the platform;
-  full ingress acceptance remains pending.
+  no direct-container ingress is exposed.
 - **Container packaging:** Python 3.12 container assets and registry-only Bicep/ARM are available;
   follow the [Azure Dev guide](getting-started/azure-dev.md) for prerequisites and current limits.
-- **Azure deployment:** Foundry-hosted version 6 serves production and completes a governed tool request
+- **Azure deployment:** Foundry-hosted version 7 serves 100% of production traffic and completes
+  governed tool requests
   with metadata-only HTTP/agent/model/tool traces, including streaming. Registration follows
-  [ADR 0016](decisions/0016-registration-outside-deployment-scripts.md). Identity acceptance and full
-  deployment-path parity remain Phase 1D work.
+  [ADR 0016](decisions/0016-registration-outside-deployment-scripts.md). The live Deploy to Azure
+  deployment produced outputs matching azd, completing Phase 1D parity evidence.
+- **Grounding:** Phase 2 is in progress. Deterministic local conformance now covers tenant and ACL
+  filtering, source lineage and freshness, untrusted evidence labels, citations, and safe
+  answerability routes. Azure AI Search and grounded application composition are not yet wired.
 
 Use the implementation plan status table as the source of truth for future capabilities.

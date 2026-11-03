@@ -17,6 +17,10 @@ Foundry for models, evaluation, and tracing instead of creating another agent ru
 > infrastructure and metadata-only Application Insights export are available. Live checks reject
 > unauthenticated forged headers and instruction overrides, and the platform denies (403) an
 > in-tenant principal with no project role.
+> Phase 2 has started with deterministic local retrieval and answerability contracts. Tenant and
+> authorization filtering, source lineage, freshness, untrusted-content labeling, citations, and
+> safe routes for weak, stale, conflicting, malicious, and missing evidence have local conformance
+> coverage. Azure AI Search and the runnable grounded profile remain subsequent Phase 2 work.
 
 ## Understand it in two minutes
 

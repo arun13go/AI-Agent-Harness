@@ -353,6 +353,20 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 | 5: Deployment and CI hardening | Modular Bicep, workload-identity CI, preflight, cleanup, production guidance, generated ARM, and drift checks | Both deployment paths pass clean-resource-group tests and CI rejects drift |
 | 6: Pilots and release | One grounded pilot, one action pilot, tightened defaults, migration guidance, and release evidence | Both pilots deploy from one tag and preserve mandatory controls |
 
+### Current Phase 2 Increment
+
+The first deterministic grounding slice is implemented locally. Framework-neutral contracts now
+carry tenant scope, authorization labels, retrieval time, source version and path, ingestion and
+freshness timestamps, explicit evidence flags, citations, and answerability decisions. The local
+reference adapter filters tenant and authorization scope before deterministic ranking and forces
+every returned payload to remain labeled `untrusted-retrieved-content`.
+
+The deterministic answerability policy routes sufficient evidence to an answer with citations,
+malicious evidence to abstention, conflicting evidence to clarification, and weak, stale, or
+missing evidence to another bounded retrieval attempt before the configured safe route. Focused
+grounding and protocol tests, Pyright, and Ruff pass. This increment does not yet implement
+chunking, Azure AI Search, grounded prompt composition, or a runnable grounded profile.
+
 ## Deferred
 
 - Semantic and preference-memory Azure implementations.
@@ -365,11 +379,15 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 ## Current Next Step
 
-Begin **Phase 2: Grounding and context** with a thin deterministic slice for retrieval contracts,
-source-aware evidence, citations, freshness, and the answerability gate. Phase 1D is complete in
-Azure Dev: v7 serves 100%, both infrastructure entry points have matching live outputs, and the
-shared post-provision smoke passes. The ADR 0015 bridge stays disabled and has not run in the
-cloud.
+Continue **Phase 2: Grounding and context** from the completed deterministic retrieval and
+answerability contract slice. Add deterministic chunk identity and shared conformance fixtures,
+then compose source-labeled evidence into a local grounded application path without treating
+retrieved content as instructions. Stabilize that boundary before adding the Azure AI Search
+reference adapter.
+
+Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
+live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and
+has not run in the cloud.
 
 Phase 5 retains the production hardening follow-ups: private networking and a least-privilege
 registration role if a managed-identity or workload-identity runner is adopted. Evaluation

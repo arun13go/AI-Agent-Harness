@@ -77,6 +77,38 @@ def test_grounded_profile_requires_retrieval_and_answerability() -> None:
         validator("harness.schema.json").validate(profile)
 
 
+@pytest.mark.parametrize(
+    ("profile", "changes"),
+    [
+        ("grounded-assistant-local", {"strategy": "keyword"}),
+        ("grounded-assistant-local", {"strategy": "hybrid"}),
+        ("grounded-assistant-local", {"adapter": "none", "strategy": "none"}),
+        ("grounded-assistant-local", {"enabled": False, "adapter": "none", "strategy": "none"}),
+        ("grounded-assistant", {"strategy": "none"}),
+        ("grounded-assistant", {"adapter": "none", "strategy": "none"}),
+        ("grounded-assistant", {"adapter": "in-memory", "strategy": "hybrid"}),
+    ],
+)
+def test_grounded_profile_adapter_and_strategy_must_be_a_consistent_pair(
+    profile: str, changes: dict[str, object]
+) -> None:
+    document = deepcopy(load_yaml(PROFILE_DIR / f"{profile}.yaml"))
+    cast(dict[str, object], document["retrieval"]).update(changes)
+
+    with pytest.raises(ValidationError):
+        validator("harness.schema.json").validate(document)
+
+
+def test_grounded_profile_cannot_disable_answerability_for_any_adapter() -> None:
+    for profile in ("grounded-assistant", "grounded-assistant-local"):
+        document = deepcopy(load_yaml(PROFILE_DIR / f"{profile}.yaml"))
+        retrieval = cast(dict[str, object], document["retrieval"])
+        cast(dict[str, object], retrieval["answerability"])["enabled"] = False
+
+        with pytest.raises(ValidationError):
+            validator("harness.schema.json").validate(document)
+
+
 def test_normalized_run_event_is_valid() -> None:
     event = {
         "schemaVersion": 1,

@@ -11,7 +11,7 @@ from typing import Literal, cast
 
 import yaml
 from jsonschema import Draft202012Validator
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from agent_harness.core.errors import ConfigurationError
 from agent_harness.core.types import JsonValue
@@ -55,6 +55,15 @@ class ContextConfig(HarnessModel):
     compaction: Literal["truncate-oldest", "summarize"]
     max_input_tokens: int = Field(alias="maxInputTokens", ge=1024, le=1_048_576)
 
+    @field_validator("compaction")
+    @classmethod
+    def _require_implemented_compaction(cls, value: str) -> str:
+        # The schema reserves "summarize", but no runtime summarizes yet; accepting it would
+        # silently truncate instead.
+        if value == "summarize":
+            raise ValueError("compaction 'summarize' is not implemented; use 'truncate-oldest'")
+        return value
+
 
 class AnswerabilityConfig(HarnessModel):
     enabled: bool
@@ -65,7 +74,7 @@ class AnswerabilityConfig(HarnessModel):
 
 class RetrievalConfig(HarnessModel):
     enabled: bool
-    adapter: Literal["none", "azure-ai-search"]
+    adapter: Literal["none", "in-memory", "azure-ai-search"]
     strategy: Literal["none", "keyword", "vector", "hybrid"]
     answerability: AnswerabilityConfig
 

@@ -377,6 +377,63 @@ async def test_act_tier_tool_cannot_bypass_proposal_lifecycle() -> None:
 
 
 @pytest.mark.asyncio
+async def test_started_run_is_closed_when_request_validation_fails() -> None:
+    config = load_harness_config(
+        ROOT / "config" / "profiles" / "action-agent.yaml",
+        CONFIG_SCHEMA,
+    )
+    tools = Registry[Tool]("tool")
+    tools.register("create_maintenance_request", MaintenanceRequestTool())
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    context = make_context()
+    runtime = MafAgentExecutor(
+        config=config,
+        client=ScriptedToolClient(),
+        tools=tools,
+        audit_sink=audit,
+    )
+
+    with pytest.raises(InputValidationError, match="Act-tier tools cannot be invoked directly"):
+        await runtime.run(
+            authenticated_identity=context.identity,
+            request=make_request(context, tools),
+            run_already_started=True,
+        )
+
+    assert [event.event_type for event in audit.events] == ["run.failed"]
+    assert audit.events[0].attributes == {"errorCode": "input_validation_error"}
+
+
+@pytest.mark.asyncio
+async def test_started_run_does_not_emit_a_second_start_and_still_completes_once() -> None:
+    config = load_harness_config(
+        ROOT / "config" / "profiles" / "assistant.yaml",
+        CONFIG_SCHEMA,
+    )
+    tools = Registry[Tool]("tool")
+    tools.register("get_service_status", ServiceStatusTool({"tenant-0001": {"api": "healthy"}}))
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    context = make_context()
+    runtime = MafAgentExecutor(
+        config=config,
+        client=ScriptedToolClient(),
+        tools=tools,
+        audit_sink=audit,
+    )
+
+    await runtime.run(
+        authenticated_identity=context.identity,
+        request=make_request(context, tools),
+        run_already_started=True,
+    )
+
+    types = [event.event_type for event in audit.events]
+    assert "run.started" not in types
+    assert types[0] == "model.requested" and types[-1] == "run.completed"
+    assert types.count("run.completed") == 1
+
+
+@pytest.mark.asyncio
 async def test_untrusted_system_content_cannot_become_instructions() -> None:
     config = load_harness_config(
         ROOT / "config" / "profiles" / "assistant.yaml",

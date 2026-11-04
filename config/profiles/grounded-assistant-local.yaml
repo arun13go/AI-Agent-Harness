@@ -1,0 +1,36 @@
+# Local grounded profile: in-memory evidence with preset scores; no Azure retrieval service.
+# The azure-ai-search reference profile is grounded-assistant.yaml.
+# Validated by harness.schema.json; consumed by configuration.py.
+schemaVersion: 1
+profile: grounded-assistant
+runtime:
+  adapter: maf
+  maxSteps: 12
+  maxToolCalls: 4
+  timeoutSeconds: 120
+model:
+  provider: foundry
+  projectEndpointEnv: FOUNDRY_PROJECT_ENDPOINT
+  deploymentNameEnv: AZURE_AI_MODEL_DEPLOYMENT_NAME
+context:
+  compaction: truncate-oldest
+  maxInputTokens: 64000
+retrieval:
+  enabled: true
+  adapter: in-memory
+  strategy: none
+  answerability:
+    enabled: true
+    onInsufficientEvidence: abstain
+memory:
+  adapter: in-memory
+  ttlDays: 30
+state:
+  adapter: in-memory
+governance:
+  maximumTier: read
+  approvalRequiredForAct: true
+  auditEnabled: true
+observability:
+  exporter: console
+  payloadCapture: false

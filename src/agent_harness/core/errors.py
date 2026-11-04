@@ -45,6 +45,12 @@ class ExecutionTimeoutError(HarnessError):
     code = "execution_timeout"
 
 
+class RetrievalError(HarnessError):
+    """Retrieval failed or returned evidence the caller may not see."""
+
+    code = "retrieval_error"
+
+
 class ContextBudgetError(ExecutionLimitError):
     """Mandatory context (instructions and the current request) cannot fit the budget."""
 

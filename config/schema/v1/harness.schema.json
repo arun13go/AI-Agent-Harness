@@ -94,7 +94,7 @@
           "type": "boolean"
         },
         "adapter": {
-          "enum": ["none", "azure-ai-search"]
+          "enum": ["none", "in-memory", "azure-ai-search"]
         },
         "strategy": {
           "enum": ["none", "keyword", "vector", "hybrid"]
@@ -186,10 +186,7 @@
                 "const": true
               },
               "adapter": {
-                "const": "azure-ai-search"
-              },
-              "strategy": {
-                "enum": ["keyword", "vector", "hybrid"]
+                "enum": ["in-memory", "azure-ai-search"]
               },
               "answerability": {
                 "properties": {
@@ -197,6 +194,64 @@
                     "const": true
                   }
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "grounded-assistant"
+          },
+          "retrieval": {
+            "properties": {
+              "adapter": {
+                "const": "azure-ai-search"
+              }
+            },
+            "required": ["adapter"]
+          }
+        },
+        "required": ["profile", "retrieval"]
+      },
+      "then": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "strategy": {
+                "enum": ["keyword", "vector", "hybrid"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "adapter": {
+                "const": "in-memory"
+              }
+            },
+            "required": ["adapter"]
+          }
+        },
+        "required": ["retrieval"]
+      },
+      "then": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "enabled": {
+                "const": true
+              },
+              "strategy": {
+                "const": "none"
               }
             }
           }

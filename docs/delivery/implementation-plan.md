@@ -377,8 +377,17 @@ deterministic policy keeps instructions and the current request, fits the newest
 best-ranked evidence to a hard token budget, always labels evidence as untrusted data, rejects
 malicious or unsafe evidence, and reports anything left out by handle instead of shortening it. A
 reusable suite defines the contract, and an end-to-end test sends a planned context through the MAF
-executor to show hostile evidence never reaches the instructions. This increment does not yet
-implement Azure AI Search, grounded prompt composition, or a runnable grounded profile.
+executor to show hostile evidence never reaches the instructions.
+
+The local grounded path follows [ADR 0019](../decisions/0019-local-grounded-execution-path.md).
+`create_grounded_executor` composes scoped retrieval, a fail-closed re-check of every returned
+item's tenant and labels, the answerability gate, the context plan and the governed MAF runtime.
+Only an `answer` route with evidence that fits reaches the model; `clarify`, `abstain` and
+`escalate` return fixed text, and unsupported settings (the `caveat` route, Azure retrieval,
+`compaction: summarize`) are refused instead of half-working. One audit lifecycle records counts
+and identifiers, never text. Mutation checks that break each control on purpose, Pyright and Ruff
+pass. This increment does not implement Azure AI Search, query relevance scoring, streaming, or
+CLI and HTTP selection of the grounded profile.
 
 ## Deferred
 
@@ -392,14 +401,14 @@ implement Azure AI Search, grounded prompt composition, or a runnable grounded p
 
 ## Current Next Step
 
-Continue **Phase 2: Grounding and context** from the completed deterministic retrieval,
-answerability, chunk-identity and bounded-context slices. Compose them into a local grounded
-application path: retrieve with scope, assess answerability, build the context plan, run through
-the governed MAF executor, and emit audit events from the plan's counts, with a runnable
-grounded-assistant profile wired to the in-memory adapters. Resolve the `compaction: summarize`
-setting first, because the policy and the MAF runtime only truncate. Stabilize that boundary before
-adding the Azure AI Search reference adapter, which must pass the shared chunker and retrieval
-conformance suites.
+Continue **Phase 2: Grounding and context** from the completed retrieval, answerability,
+chunk-identity, bounded-context and local grounded-path slices. Next, make the local path
+runnable and relevant: a deterministic lexical scorer for the in-memory provider (so retrieval
+responds to the question), a Markdown corpus loader built on the chunker, and a `grounded-run`
+command with a deterministic model for tests. Hosting the grounded profile (HTTP, authenticated
+labels) and streaming follow. Then add the Azure AI Search reference adapter, which must pass the
+shared chunker and retrieval conformance suites, and move the score threshold, retrieval limit and
+attempt count into validated configuration with it.
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

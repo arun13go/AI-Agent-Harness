@@ -58,6 +58,7 @@ class AnswerabilityReason(StrEnum):
     MISSING = "missing"
     WEAK = "weak"
     STALE = "stale"
+    UNFIT = "unfit"
     CONFLICTING = "conflicting"
     MALICIOUS = "malicious"
 

@@ -107,14 +107,35 @@ class MafAgentExecutor:
         *,
         authenticated_identity: IdentityScope,
         request: ModelRequest,
+        run_already_started: bool = False,
     ) -> ModelResponse:
-        """Run MAF with bounded history, governed tools, and correlated events."""
+        """Run MAF with bounded history, governed tools, and correlated events.
 
-        context, writer, agent, messages, timeout_seconds = self._prepare_execution(
-            authenticated_identity=authenticated_identity,
-            request=request,
-        )
-        await self._emit_started(writer, request=request)
+        When ``run_already_started`` is true the caller has already emitted ``run.started`` for
+        this run, so the runtime does not emit it again and always closes the run: any failure,
+        including request validation, ends with exactly one ``run.failed`` event.
+        """
+
+        try:
+            context, writer, agent, messages, timeout_seconds = self._prepare_execution(
+                authenticated_identity=authenticated_identity,
+                request=request,
+            )
+        except HarnessError as error:
+            if run_already_started:
+                await RunEventWriter(
+                    context=request.context,
+                    audit_sink=self._audit_sink,
+                    clock=self._clock,
+                    event_id_factory=self._event_id_factory,
+                ).emit(
+                    "run.failed",
+                    source="maf-runtime",
+                    outcome="failed",
+                    attributes={"errorCode": error.code},
+                )
+            raise
+        await self._emit_started(writer, request=request, run_started=not run_already_started)
         try:
             async with asyncio.timeout(timeout_seconds):
                 with trace.use_span(self._parent_span(context.trace_id, context.run_id)):
@@ -276,8 +297,10 @@ class MafAgentExecutor:
         writer: RunEventWriter,
         *,
         request: ModelRequest,
+        run_started: bool = True,
     ) -> None:
-        await writer.emit("run.started", source="maf-runtime", outcome="started", attributes={})
+        if run_started:
+            await writer.emit("run.started", source="maf-runtime", outcome="started", attributes={})
         await writer.emit(
             "model.requested",
             source="model",

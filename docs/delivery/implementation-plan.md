@@ -363,9 +363,15 @@ every returned payload to remain labeled `untrusted-retrieved-content`.
 
 The deterministic answerability policy routes sufficient evidence to an answer with citations,
 malicious evidence to abstention, conflicting evidence to clarification, and weak, stale, or
-missing evidence to another bounded retrieval attempt before the configured safe route. Focused
-grounding and protocol tests, Pyright, and Ruff pass. This increment does not yet implement
-chunking, Azure AI Search, grounded prompt composition, or a runnable grounded profile.
+missing evidence to another bounded retrieval attempt before the configured safe route.
+
+The deterministic chunking slice follows [ADR 0017](../decisions/0017-deterministic-chunk-identity.md).
+A Markdown chunker keeps headings, tables and code blocks whole, derives identifiers from tenant,
+source, version and structural path (not from labels or content), and enforces size bounds. A
+reusable conformance suite defines these rules for any chunker, and shared validators now guard
+tenant scope, authorization labels and source lineage for every ingestion path. Local tests,
+including mutation checks that break identity on purpose, Pyright and Ruff pass. This increment does
+not yet implement Azure AI Search, grounded prompt composition, or a runnable grounded profile.
 
 ## Deferred
 
@@ -379,11 +385,12 @@ chunking, Azure AI Search, grounded prompt composition, or a runnable grounded p
 
 ## Current Next Step
 
-Continue **Phase 2: Grounding and context** from the completed deterministic retrieval and
-answerability contract slice. Add deterministic chunk identity and shared conformance fixtures,
-then compose source-labeled evidence into a local grounded application path without treating
-retrieved content as instructions. Stabilize that boundary before adding the Azure AI Search
-reference adapter.
+Continue **Phase 2: Grounding and context** from the completed deterministic retrieval,
+answerability and chunk-identity slices. Compose source-labeled evidence into a local grounded
+application path without treating retrieved content as instructions: a context policy with a hard
+token budget, a deterministic overflow route and result handles, then the grounded profile wired to
+the in-memory adapters. Stabilize that boundary before adding the Azure AI Search reference adapter,
+which must pass the shared chunker and retrieval conformance suites.
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

@@ -19,7 +19,10 @@ from agent_harness.core.errors import (
 from agent_harness.core.governance import (
     ExecutionBudget,
     authorize_tool,
+    validate_authorization_labels,
     validate_request_context,
+    validate_source_reference,
+    validate_tenant_scope,
     validate_tool_call,
 )
 from agent_harness.core.registry import Registry
@@ -28,6 +31,7 @@ from agent_harness.core.types import (
     JsonScalar,
     RequestContext,
     RunEvent,
+    SourceReference,
     ToolCall,
     ToolDefinition,
     ToolRiskTier,
@@ -126,6 +130,47 @@ def test_tool_input_is_validated_against_registered_schema() -> None:
             definition,
             ToolCall(call_id="call-00000001", tool_name=definition.name, arguments={}),
         )
+
+
+@pytest.mark.parametrize(
+    "value", ["", "short", "tenant 0001", "tenant/0001", "-tenant-0001", "t" * 129]
+)
+def test_tenant_scope_must_be_an_opaque_identifier(value: str) -> None:
+    with pytest.raises(InputValidationError, match="Tenant scope"):
+        validate_tenant_scope(value)
+    validate_tenant_scope("tenant-0001")
+
+
+def test_authorization_labels_are_canonicalized_and_bounded() -> None:
+    assert validate_authorization_labels(["group:b", "group:a", "group:b"]) == (
+        "group:a",
+        "group:b",
+    )
+    assert validate_authorization_labels([]) == ()
+    for invalid in (["bad label"], [""], ["x" * 129], [":leading"]):
+        with pytest.raises(InputValidationError, match="Authorization label"):
+            validate_authorization_labels(invalid)
+    with pytest.raises(InputValidationError, match="At most 64"):
+        validate_authorization_labels([f"label-{number}" for number in range(65)])
+    assert len(validate_authorization_labels([f"label-{n % 64}" for n in range(500)])) == 64
+
+
+def test_source_reference_rejects_ambiguous_lineage() -> None:
+    moment = datetime(2026, 11, 3, tzinfo=UTC)
+    valid = SourceReference("source-1", "v1", "/docs/a.md", moment, moment)
+    validate_source_reference(valid)
+    invalid = [
+        SourceReference("", "v1", "/docs/a.md", moment, moment),
+        SourceReference("s" * 257, "v1", "/docs/a.md", moment, moment),
+        SourceReference("source-1", "v\n1", "/docs/a.md", moment, moment),
+        SourceReference("source-1", "v1", "/docs/a#b", moment, moment),
+        SourceReference("source-1", "v1", "p" * 513, moment, moment),
+        SourceReference("source-1", "v1", "/docs/a.md", datetime(2026, 11, 3), moment),
+        SourceReference("source-1", "v1", "/docs/a.md", moment, datetime(2026, 11, 4)),
+    ]
+    for source in invalid:
+        with pytest.raises(InputValidationError):
+            validate_source_reference(source)
 
 
 def test_execution_budget_enforces_tool_call_limit() -> None:

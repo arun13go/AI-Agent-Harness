@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
 
 from agent_harness.core.errors import InputValidationError
-from agent_harness.core.governance import validate_identity_scope
+from agent_harness.core.governance import validate_authorization_labels, validate_identity_scope
 from agent_harness.core.types import IdentityScope, RetrievedItem
-
-_AUTHORIZATION_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 
 
 class InMemoryRetrievalProvider:
@@ -41,10 +38,7 @@ class InMemoryRetrievalProvider:
             raise InputValidationError("Retrieval query must contain 1 to 2048 characters")
         if not 1 <= limit <= 100:
             raise InputValidationError("Retrieval limit must be between 1 and 100")
-        if any(not _AUTHORIZATION_LABEL.fullmatch(label) for label in authorization_labels):
-            raise InputValidationError("Authorization label is invalid")
-
-        allowed_labels = frozenset(authorization_labels)
+        allowed_labels = frozenset(validate_authorization_labels(authorization_labels))
         retrieved_at = self._clock()
         if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
             raise InputValidationError("Retrieval time must be timezone-aware")

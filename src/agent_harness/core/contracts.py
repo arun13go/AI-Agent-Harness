@@ -49,11 +49,19 @@ class RetrievalProvider(Protocol):
 
 
 class Chunker(Protocol):
+    """Split one source version into scoped, attributable evidence chunks.
+
+    Chunk identifiers must be deterministic functions of tenant scope, source identity, source
+    version, and structural path. Authorization labels and content are not part of identity.
+    """
+
     def chunk(
         self,
         *,
         source: SourceReference,
         content: str,
+        tenant_scope: str,
+        authorization_labels: Sequence[str],
     ) -> Sequence[RetrievedItem]: ...
 
 

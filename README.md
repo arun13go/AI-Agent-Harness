@@ -184,6 +184,18 @@ The output names the route, the answer, and the cited source files, and never ec
 text. Matching is lexical and deliberately conservative, so a paraphrase that shares few words with
 the text may abstain; use `--minimum-score` to adjust.
 
+Measure retrieval behavior without a model, against a committed question set, and fail if it
+regresses ([ADR 0022](docs/decisions/0022-retrieval-relevance-baseline.md)):
+
+```powershell
+uv run agent-harness eval-retrieval `
+  --profile config\profiles\grounded-assistant-local.yaml
+```
+
+It reports answer rate, source recall, citation precision and false-answer rate per category, and
+exits 1 if a guard in [`evals/grounded-relevance/thresholds.yaml`](evals/grounded-relevance/thresholds.yaml)
+fails. The false-answer guard is fixed at zero.
+
 Examples live under [`config/profiles/`](config/profiles/).
 
 ## Repository map

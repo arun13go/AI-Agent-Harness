@@ -32,6 +32,7 @@ from agent_harness.app.grounded_executor import (
     ensure_grounded_profile_supported,
 )
 from agent_harness.app.read_executor import ReadToolExecutor
+from agent_harness.app.retrieval_eval import evaluate_retrieval
 from agent_harness.core.configuration import HarnessConfig, ProfileName, load_harness_config
 from agent_harness.core.contracts import Tool
 from agent_harness.core.errors import ConfigurationError, HarnessError
@@ -145,6 +146,29 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     grounded_parser.add_argument("--fresh-days", type=int, default=30)
     grounded_parser.add_argument("--minimum-score", type=float, default=0.5)
+
+    eval_parser = subparsers.add_parser(
+        "eval-retrieval",
+        help="Measure grounded-path relevance over a versioned question set (no model call)",
+    )
+    eval_parser.add_argument("--profile", type=Path, required=True)
+    eval_parser.add_argument(
+        "--config-schema",
+        type=Path,
+        default=Path("config/schema/v1/harness.schema.json"),
+    )
+    eval_parser.add_argument(
+        "--event-schema",
+        type=Path,
+        default=Path("config/schema/v1/run-event.schema.json"),
+    )
+    eval_parser.add_argument("--dataset", type=Path, default=Path("evals/grounded-relevance"))
+    eval_parser.add_argument("--minimum-score", type=float, default=0.5)
+    eval_parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="Report metrics without checking thresholds.yaml",
+    )
     return parser
 
 
@@ -340,6 +364,24 @@ async def _run_grounded(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+async def _run_eval_retrieval(args: argparse.Namespace) -> dict[str, object]:
+    """Score the grounded path over a question set without calling a model."""
+
+    config = load_harness_config(args.profile, args.config_schema)
+    _require_profile(config, command="eval-retrieval", expected=ProfileName.GROUNDED_ASSISTANT)
+    ensure_grounded_profile_supported(config)
+    if not 0.0 <= args.minimum_score <= 1.0:
+        raise ConfigurationError("Minimum score must be between 0 and 1")
+    report = await evaluate_retrieval(
+        dataset_dir=args.dataset,
+        config=config,
+        event_schema=args.event_schema,
+        minimum_score=args.minimum_score,
+        apply_thresholds=not args.report_only,
+    )
+    return report.to_json()
+
+
 async def _run_action_demo(args: argparse.Namespace) -> dict[str, object]:
     """Compose and execute one local action lifecycle."""
 
@@ -413,10 +455,12 @@ def main(argv: list[str] | None = None) -> int:
             output = asyncio.run(_run_agent(args))
         elif args.command == "grounded-run":
             output = asyncio.run(_run_grounded(args))
+        elif args.command == "eval-retrieval":
+            output = asyncio.run(_run_eval_retrieval(args))
         else:
             output = asyncio.run(_run_read(args))
     except HarnessError as error:
         print(json.dumps({"error": error.code, "message": error.message}), file=sys.stderr)
         return 2
     print(json.dumps(output, indent=2, sort_keys=True))
-    return 0
+    return 1 if output.get("passed") is False else 0

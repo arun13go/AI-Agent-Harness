@@ -74,7 +74,8 @@ Other documents should link to these sources instead of copying their content.
 |   `-- schema/v1/                    # Machine-enforced configuration and event contracts
 |-- src/agent_harness/core/           # Framework-neutral types and protocols
 |-- src/agent_harness/adapters/       # Local tools and storage adapters
-|-- src/agent_harness/app/            # Read/action runners and CLI
+|-- src/agent_harness/app/            # Read, action and grounded runners, evaluation, and CLI
+|-- evals/                            # Versioned question sets, thresholds and regression guards
 |-- tests/                            # Deterministic schema and contract checks
 `-- docs/
     |-- README.md                     # This navigation guide
@@ -85,7 +86,9 @@ Other documents should link to these sources instead of copying their content.
     `-- historical/                   # Superseded design-review provenance
 ```
 
-Evaluation and infrastructure folders are added only when their first working artifacts exist.
+The `evals/` folder holds the first evaluation artifact, a retrieval relevance baseline
+([ADR 0022](decisions/0022-retrieval-relevance-baseline.md)). Model-judged evaluation arrives in
+Phase 4. The `infra/` folder holds the deployment assets described in the Azure Dev guide.
 
 ## Current status
 

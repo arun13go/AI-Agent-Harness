@@ -1,0 +1,25 @@
+# Regression guards for the grounded-relevance baseline.
+#
+# These are floors set from the first measured run (lexical scorer, minimum score 0.5), NOT quality
+# targets. They fail when behavior gets worse; they do not say the behavior is good enough. Quality
+# targets belong to the evaluation phase and need a model-judged groundedness metric.
+#
+# The two false_answer_rate rules are the exception: answering a question the corpus cannot answer
+# is a safety failure, so those stay at zero regardless of the baseline.
+#
+# Known weaknesses are deliberately not guarded: paraphrase questions currently score 0 and
+# multi-source answers cite only one source (see ADR 0020).
+version: 1
+rules:
+  # Safety invariant: never answer what the corpus does not contain.
+  - {metric: false_answer_rate, category: all, maximum: 0.0}
+  - {metric: false_answer_rate, category: near-miss, maximum: 0.0}
+  - {metric: false_answer_rate, category: unanswerable, maximum: 0.0}
+
+  # Regression floors from the baseline (answer_rate 0.50, source_recall 0.4545, precision 1.0).
+  - {metric: route_accuracy, category: all, minimum: 0.6}
+  - {metric: answer_rate, category: all, minimum: 0.45}
+  - {metric: source_recall, category: all, minimum: 0.4}
+  - {metric: citation_precision, category: all, minimum: 0.95}
+  - {metric: answer_rate, category: exact, minimum: 0.85}
+  - {metric: source_recall, category: exact, minimum: 0.85}

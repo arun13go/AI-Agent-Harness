@@ -397,6 +397,14 @@ questions and abstaining on two of six answerable paraphrases, so relevance qual
 and is not claimed. This increment does not implement Azure AI Search, HTTP hosting, authenticated
 labels, or streaming.
 
+The relevance baseline follows [ADR 0022](../decisions/0022-retrieval-relevance-baseline.md). The
+first `evals/` artifact is a 33-question, six-category set over a small corpus, scored through the
+real grounded path with the model stubbed out (`eval-retrieval`). The lexical scorer answers about
+half of the answerable questions, none of the paraphrases, and none of the 11 unanswerable or
+near-miss questions. A threshold sweep shows no setting that improves recall without answering
+questions it must refuse, so the 0.5 default stays and the gap is for semantic retrieval to close.
+Regression guards keep the false-answer rate at zero and the other metrics at their baseline.
+
 ## Deferred
 
 - Semantic and preference-memory Azure implementations.
@@ -410,18 +418,22 @@ labels, or streaming.
 ## Current Next Step
 
 Continue **Phase 2: Grounding and context** from the completed retrieval, answerability,
-chunk-identity, bounded-context, local grounded-path and local lexical-retrieval slices. Remaining,
-in order:
+chunk-identity, bounded-context, local grounded-path, lexical-retrieval and relevance-baseline
+slices. Remaining, in order:
 
-1. **Authorization labels for hosting.** Decide in an ADR where a caller's labels come from
-   (for example Entra group claims or an allow-list mapping), then host the grounded profile over
-   HTTP with streaming. The executor already refuses labels that did not come from authentication.
-2. **Relevance baseline.** Seed a small deterministic question set with expected sources so
-   relevance is measured instead of eyeballed (the first `evals/` artifact, feeding Phase 4), and
-   use it to judge the lexical scorer and the default score threshold.
+1. **Authorization labels for hosting** (decided: [ADR 0021](../decisions/0021-caller-authorization-labels.md)).
+   Labels are a fixed set per agent endpoint from explicit deployment configuration, because the
+   platform supplies no claims or key lookup; per-user access control is not available and is
+   recorded as a limit. Wiring (the `CallerLabelResolver` port and hosted startup checks) happens
+   with hosting, which now follows the Azure AI Search adapter.
+2. **Relevance baseline** (done: [ADR 0022](../decisions/0022-retrieval-relevance-baseline.md)).
+   `eval-retrieval` is the comparison any new retrieval strategy, including the Azure adapter,
+   must be scored with. Model-judged groundedness remains Phase 4.
 3. **Azure AI Search reference adapter** (new cloud resource; needs approval), which must pass the
-   shared chunker and retrieval conformance suites. Move the score threshold, retrieval limit and
-   attempt count into validated configuration with it.
+   shared chunker and retrieval conformance suites and be scored with `eval-retrieval` against the
+   lexical baseline. Move the score threshold, retrieval limit and
+   attempt count into validated configuration with it. Then **host the grounded profile over HTTP
+   with streaming**, using label-filtered queries from this adapter.
 4. **Word and PDF ingestion** (planned; after the previous step decides the Azure ingestion path).
    Today only Markdown is ingested. Each format becomes an *extractor* that turns the original file
    into structured text, so the existing chunker, chunk identity ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md))

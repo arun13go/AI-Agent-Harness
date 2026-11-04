@@ -1,0 +1,54 @@
+# Deterministic relevance baseline for the grounded path (no model is called).
+# Each question states the route a correct system takes and the sources that must be cited.
+# Written before the scorer was run on it, so the data is not tuned to the algorithm.
+version: 1
+name: grounded-relevance
+description: >
+  Questions over a small fictional operations handbook. Categories separate easy lexical matches
+  from paraphrases, which the lexical scorer is expected to handle poorly, and from near-miss
+  questions that share vocabulary with the corpus but ask for facts it does not contain.
+questions:
+  # exact: the question reuses the document's own words
+  - {id: q01, category: exact, question: "How many days do customers have to pay an invoice?", expected_route: answer, expected_sources: [billing.md]}
+  - {id: q02, category: exact, question: "What is the late fee for overdue balances?", expected_route: answer, expected_sources: [billing.md]}
+  - {id: q03, category: exact, question: "How long are application logs retained?", expected_route: answer, expected_sources: [data-retention.md]}
+  - {id: q04, category: exact, question: "How often are databases backed up?", expected_route: answer, expected_sources: [backup-and-recovery.md]}
+  - {id: q05, category: exact, question: "What is the first response time for a Sev1 incident?", expected_route: answer, expected_sources: [incident-severity.md]}
+  - {id: q06, category: exact, question: "Who approves an access request?", expected_route: answer, expected_sources: [access-requests.md]}
+  - {id: q07, category: exact, question: "How do I restart the API service?", expected_route: answer, expected_sources: [restart-procedures.md]}
+  - {id: q08, category: exact, question: "How quickly must a lost device be reported to the security team?", expected_route: answer, expected_sources: [security-policies.md]}
+
+  # paraphrase: the answer is present but the question shares few words with it
+  - {id: q09, category: paraphrase, question: "When does a customer's money have to reach us after we bill them?", expected_route: answer, expected_sources: [billing.md]}
+  - {id: q10, category: paraphrase, question: "What happens to a client's records after they stop being a customer?", expected_route: answer, expected_sources: [data-retention.md]}
+  - {id: q11, category: paraphrase, question: "How can I get permission to use a production system?", expected_route: answer, expected_sources: [access-requests.md]}
+  - {id: q12, category: paraphrase, question: "Do I need to change my password every few months?", expected_route: answer, expected_sources: [security-policies.md]}
+  - {id: q13, category: paraphrase, question: "How soon must someone respond when the whole platform is down?", expected_route: answer, expected_sources: [incident-severity.md]}
+  - {id: q14, category: paraphrase, question: "What should I do before bouncing the web tier?", expected_route: answer, expected_sources: [restart-procedures.md]}
+  - {id: q15, category: paraphrase, question: "How much data could we lose in a disaster?", expected_route: answer, expected_sources: [backup-and-recovery.md]}
+  - {id: q16, category: paraphrase, question: "What equipment does a new hire get on day one?", expected_route: answer, expected_sources: [onboarding.md]}
+
+  # multi-source: the answer needs two documents
+  - {id: q17, category: multi-source, question: "How long are logs kept and how long are backups kept?", expected_route: answer, expected_sources: [data-retention.md, backup-and-recovery.md]}
+  - {id: q18, category: multi-source, question: "What are the encryption rules for laptops and the multi-factor rules for production accounts?", expected_route: answer, expected_sources: [security-policies.md, access-requests.md]}
+
+  # short: keyword-style queries
+  - {id: q19, category: short, question: "backup retention", expected_route: answer, expected_sources: [backup-and-recovery.md]}
+  - {id: q20, category: short, question: "late fees", expected_route: answer, expected_sources: [billing.md]}
+  - {id: q21, category: short, question: "legal hold", expected_route: answer, expected_sources: [data-retention.md]}
+  - {id: q22, category: short, question: "postmortem", expected_route: answer, expected_sources: [incident-severity.md]}
+
+  # unanswerable: nothing in the corpus is relevant
+  - {id: q23, category: unanswerable, question: "What is the capital of France?", expected_route: abstain, expected_sources: []}
+  - {id: q24, category: unanswerable, question: "Who won the last football world cup?", expected_route: abstain, expected_sources: []}
+  - {id: q25, category: unanswerable, question: "How do I configure a Kubernetes ingress controller?", expected_route: abstain, expected_sources: []}
+  - {id: q26, category: unanswerable, question: "What is our parental leave policy?", expected_route: abstain, expected_sources: []}
+  - {id: q27, category: unanswerable, question: "Which programming languages does the team use?", expected_route: abstain, expected_sources: []}
+  - {id: q28, category: unanswerable, question: "What is the CEO's email address?", expected_route: abstain, expected_sources: []}
+
+  # near-miss: shares vocabulary with the corpus but asks for a fact it does not contain
+  - {id: q29, category: near-miss, question: "What is the refund policy for annual contracts?", expected_route: abstain, expected_sources: []}
+  - {id: q30, category: near-miss, question: "What is the response time for a Sev5 incident?", expected_route: abstain, expected_sources: []}
+  - {id: q31, category: near-miss, question: "How often is the message queue backed up?", expected_route: abstain, expected_sources: []}
+  - {id: q32, category: near-miss, question: "What is the monthly cost of the access portal?", expected_route: abstain, expected_sources: []}
+  - {id: q33, category: near-miss, question: "Who is the incident commander for the Sev1 incident tonight?", expected_route: abstain, expected_sources: []}

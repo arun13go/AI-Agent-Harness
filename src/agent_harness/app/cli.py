@@ -12,6 +12,9 @@ from uuid import uuid4
 
 from agent_harness.adapters.foundry.model_client import create_foundry_chat_client
 from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
+from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
+from agent_harness.adapters.retrieval.lexical import IdfCoverageScorer
+from agent_harness.adapters.retrieval.markdown_corpus import load_markdown_corpus
 from agent_harness.adapters.storage.in_memory_action_stores import (
     InMemoryApprovalProvider,
     InMemoryArtifactStore,
@@ -24,6 +27,10 @@ from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.adapters.tools.maintenance_request import MaintenanceRequestTool
 from agent_harness.adapters.tools.service_status import ServiceStatusTool
 from agent_harness.app.action_lifecycle import ActionLifecycle
+from agent_harness.app.grounded_executor import (
+    create_grounded_executor,
+    ensure_grounded_profile_supported,
+)
 from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.core.configuration import HarnessConfig, ProfileName, load_harness_config
 from agent_harness.core.contracts import Tool
@@ -103,6 +110,41 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=[ApprovalDecision.APPROVED.value, ApprovalDecision.DENIED.value],
         default=ApprovalDecision.APPROVED.value,
     )
+
+    grounded_parser = subparsers.add_parser(
+        "grounded-run",
+        help="Answer a question only from a local Markdown corpus, using a Foundry model",
+    )
+    grounded_parser.add_argument("--profile", type=Path, required=True)
+    grounded_parser.add_argument(
+        "--config-schema",
+        type=Path,
+        default=Path("config/schema/v1/harness.schema.json"),
+    )
+    grounded_parser.add_argument(
+        "--event-schema",
+        type=Path,
+        default=Path("config/schema/v1/run-event.schema.json"),
+    )
+    grounded_parser.add_argument("--tenant", required=True)
+    grounded_parser.add_argument("--subject", required=True)
+    grounded_parser.add_argument("--corpus", type=Path, required=True)
+    grounded_parser.add_argument("--question", required=True)
+    grounded_parser.add_argument(
+        "--corpus-label",
+        action="append",
+        default=[],
+        help="Access label required to read the corpus (repeatable)",
+    )
+    grounded_parser.add_argument(
+        "--caller-label",
+        action="append",
+        default=[],
+        help="Access label the caller holds (repeatable). Development only: hosts must take "
+        "labels from authentication",
+    )
+    grounded_parser.add_argument("--fresh-days", type=int, default=30)
+    grounded_parser.add_argument("--minimum-score", type=float, default=0.5)
     return parser
 
 
@@ -118,7 +160,8 @@ def _require_profile(
         return
     if config.profile is ProfileName.GROUNDED_ASSISTANT:
         raise ConfigurationError(
-            "The grounded-assistant profile is a Phase 2 contract and is not runnable yet"
+            f"The grounded-assistant profile runs only with the 'grounded-run' command, "
+            f"not '{command}'"
         )
     raise ConfigurationError(
         f"Command '{command}' requires the '{expected.value}' profile; "
@@ -228,6 +271,75 @@ async def _run_agent(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+async def _run_grounded(args: argparse.Namespace) -> dict[str, object]:
+    """Load a local corpus and answer one question only from in-scope evidence."""
+
+    config = load_harness_config(args.profile, args.config_schema)
+    _require_profile(config, command="grounded-run", expected=ProfileName.GROUNDED_ASSISTANT)
+    ensure_grounded_profile_supported(config)
+    now = datetime.now(UTC)
+    corpus = load_markdown_corpus(
+        args.corpus,
+        tenant_scope=args.tenant,
+        authorization_labels=args.corpus_label,
+        ingested_at=now,
+        fresh_for=timedelta(days=args.fresh_days),
+    )
+    if not 0.0 <= args.minimum_score <= 1.0:
+        raise ConfigurationError("Minimum score must be between 0 and 1")
+    identity = IdentityScope(tenant_scope=args.tenant, subject_scope=args.subject)
+    context = RequestContext(
+        identity=identity,
+        run_id=f"run-{uuid4().hex}",
+        correlation_id=f"correlation-{uuid4().hex}",
+        trace_id=uuid4().hex,
+        deadline=now + timedelta(seconds=config.runtime.timeout_seconds),
+    )
+    audit_sink = InMemoryAuditSink(args.event_schema)
+    client = create_foundry_chat_client(config)
+    try:
+        executor = create_grounded_executor(
+            config=config,
+            retrieval=InMemoryRetrievalProvider(corpus, scorer=IdfCoverageScorer()),
+            runtime=MafAgentExecutor(
+                config=config,
+                client=client,
+                tools=Registry[Tool]("tool"),
+                audit_sink=audit_sink,
+            ),
+            audit_sink=audit_sink,
+            minimum_evidence_score=args.minimum_score,
+        )
+        response = await executor.run(
+            authenticated_identity=identity,
+            context=context,
+            question=args.question,
+            authorization_labels=args.caller_label,
+        )
+    finally:
+        await client.project_client.close()
+    return {
+        "runId": context.run_id,
+        "route": response.route.value,
+        "reasons": [reason.value for reason in response.reasons],
+        "answer": response.message.content,
+        "citations": [
+            {
+                "sourceId": citation.source_id,
+                "sourceVersion": citation.source_version,
+                "path": citation.structural_path,
+            }
+            for citation in response.citations
+        ],
+        "includedEvidenceCount": len(response.included_evidence_ids),
+        "omittedEvidenceCount": len(response.omitted_evidence_ids),
+        "retrievalAttempts": response.retrieval_attempts,
+        "chunkCount": len(corpus),
+        "modelId": response.model.model_id if response.model is not None else None,
+        "auditEventCount": len(audit_sink.events),
+    }
+
+
 async def _run_action_demo(args: argparse.Namespace) -> dict[str, object]:
     """Compose and execute one local action lifecycle."""
 
@@ -299,6 +411,8 @@ def main(argv: list[str] | None = None) -> int:
             output = asyncio.run(_run_action_demo(args))
         elif args.command == "agent-run":
             output = asyncio.run(_run_agent(args))
+        elif args.command == "grounded-run":
+            output = asyncio.run(_run_grounded(args))
         else:
             output = asyncio.run(_run_read(args))
     except HarnessError as error:

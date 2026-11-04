@@ -25,7 +25,7 @@ adapter expectations.
 | 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Complete |
-| 2 | Grounded-assistant profile | Not started |
+| 2 | Grounded-assistant profile | In progress (local path runnable; Azure AI Search and hosting open) |
 | 3 | Durable Azure adapters | Not started |
 | 4 | Evaluation and operations | Not started |
 | 5 | Deployment and CI hardening | Not started |
@@ -386,8 +386,16 @@ Only an `answer` route with evidence that fits reaches the model; `clarify`, `ab
 `escalate` return fixed text, and unsupported settings (the `caveat` route, Azure retrieval,
 `compaction: summarize`) are refused instead of half-working. One audit lifecycle records counts
 and identifiers, never text. Mutation checks that break each control on purpose, Pyright and Ruff
-pass. This increment does not implement Azure AI Search, query relevance scoring, streaming, or
-CLI and HTTP selection of the grounded profile.
+pass.
+
+The local retrieval slice follows [ADR 0020](../decisions/0020-local-lexical-retrieval-and-corpus-loading.md).
+A deterministic IDF-coverage scorer makes the in-memory provider respond to the question, with
+document statistics taken only from evidence the caller may read; a corpus loader treats a Markdown
+folder as untrusted input; and `grounded-run` ties them to the grounded path. An informal check on
+the repository's own decision records showed the conservative design working on unanswerable
+questions and abstaining on two of six answerable paraphrases, so relevance quality is unmeasured
+and is not claimed. This increment does not implement Azure AI Search, HTTP hosting, authenticated
+labels, or streaming.
 
 ## Deferred
 
@@ -402,13 +410,21 @@ CLI and HTTP selection of the grounded profile.
 ## Current Next Step
 
 Continue **Phase 2: Grounding and context** from the completed retrieval, answerability,
-chunk-identity, bounded-context and local grounded-path slices. Next, make the local path
-runnable and relevant: a deterministic lexical scorer for the in-memory provider (so retrieval
-responds to the question), a Markdown corpus loader built on the chunker, and a `grounded-run`
-command with a deterministic model for tests. Hosting the grounded profile (HTTP, authenticated
-labels) and streaming follow. Then add the Azure AI Search reference adapter, which must pass the
-shared chunker and retrieval conformance suites, and move the score threshold, retrieval limit and
-attempt count into validated configuration with it.
+chunk-identity, bounded-context, local grounded-path and local lexical-retrieval slices. Remaining,
+in order:
+
+1. **Authorization labels for hosting.** Decide in an ADR where a caller's labels come from
+   (for example Entra group claims or an allow-list mapping), then host the grounded profile over
+   HTTP with streaming. The executor already refuses labels that did not come from authentication.
+2. **Relevance baseline.** Seed a small deterministic question set with expected sources so
+   relevance is measured instead of eyeballed (the first `evals/` artifact, feeding Phase 4), and
+   use it to judge the lexical scorer and the default score threshold.
+3. **Azure AI Search reference adapter** (new cloud resource; needs approval), which must pass the
+   shared chunker and retrieval conformance suites. Move the score threshold, retrieval limit and
+   attempt count into validated configuration with it.
+4. **Live validation** of the grounded path against a Foundry model (needs approval).
+5. **Episodic-memory policy**, listed in the Phase 2 deliverable, which has no design yet:
+   schedule it or move it to Phase 3 explicitly.
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

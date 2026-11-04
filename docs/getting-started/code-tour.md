@@ -216,7 +216,7 @@ agents:
 | [`assistant.yaml`](../../config/profiles/assistant.yaml) | `run` | Runnable without Azure | A read-only tool is checked, executed, and audited deterministically |
 | [`assistant.yaml`](../../config/profiles/assistant.yaml) | `agent-run` | Runnable when Foundry access is available | The Foundry model can request the same read tool through MAF, but the same checks still apply |
 | [`grounded-assistant.yaml`](../../config/profiles/grounded-assistant.yaml) | None yet | Planned for Phase 2 | Azure AI Search retrieval is not implemented yet; the profile is the reference configuration |
-| [`grounded-assistant-local.yaml`](../../config/profiles/grounded-assistant-local.yaml) | None yet (library only) | Composable in tests | [`create_grounded_executor`](../../src/agent_harness/app/grounded_executor.py) runs scoped in-memory retrieval, answerability, a bounded context plan and the governed MAF runtime ([ADR 0019](../decisions/0019-local-grounded-execution-path.md)); the CLI and HTTP host do not select it yet |
+| [`grounded-assistant-local.yaml`](../../config/profiles/grounded-assistant-local.yaml) | `grounded-run` | Runnable with a Foundry model | Scoped in-memory retrieval over a local Markdown folder, answerability, a bounded context plan and the governed MAF runtime ([ADR 0019](../decisions/0019-local-grounded-execution-path.md), [ADR 0020](../decisions/0020-local-lexical-retrieval-and-corpus-loading.md)); the HTTP host does not select it yet |
 | [`action-agent.yaml`](../../config/profiles/action-agent.yaml) | `action-demo` | Runnable without Azure | An action cannot execute until its exact proposal is approved, and it executes at most once |
 
 The CLI rejects unsupported profile and command combinations. In particular, it rejects the
@@ -262,12 +262,15 @@ flowchart LR
 - Exists because a permission check alone is not enough for consequential actions: the exact
   change must be approved, unchanged, unexpired, and protected from duplicate execution.
 
-The grounded path exists as a library, not yet as a command. `create_grounded_executor` composes
-scoped in-memory retrieval, the answerability gate, a bounded context plan and the governed MAF
-runtime, and answers only when sufficient, in-scope evidence fits the budget; every other route
-returns fixed text without calling the model. It is exercised by
-[`test_grounded_executor.py`](../../tests/app/test_grounded_executor.py). Azure AI Search, query
-relevance scoring and CLI or HTTP selection of the profile are still Phase 2 work.
+The grounded path is selected by `grounded-assistant-local.yaml + grounded-run`. The command loads a
+Markdown folder through [`markdown_corpus.py`](../../src/agent_harness/adapters/retrieval/markdown_corpus.py)
+(untrusted input: no symlinks, bounded size), ranks chunks with the lexical scorer in
+[`lexical.py`](../../src/agent_harness/adapters/retrieval/lexical.py), and `create_grounded_executor`
+answers only when sufficient, in-scope evidence fits the budget; every other route returns fixed
+text without calling the model. It is exercised by
+[`test_grounded_executor.py`](../../tests/app/test_grounded_executor.py) and
+[`test_cli_grounded.py`](../../tests/app/test_cli_grounded.py). Azure AI Search, HTTP hosting with
+authenticated labels, streaming, and measured relevance quality are still Phase 2 work.
 
 ### Files Used by Each Path
 
@@ -276,7 +279,7 @@ relevance scoring and CLI or HTTP selection of the profile are still Phase 2 wor
 | Read Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`read_executor.py`](../../src/agent_harness/app/read_executor.py), [`service_status.py`](../../src/agent_harness/adapters/tools/service_status.py) | The CLI selects the assistant profile, the executor enforces read checks, and the sample tool returns tenant-scoped data |
 | MAF and Foundry Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`maf/agent_executor.py`](../../src/agent_harness/adapters/maf/agent_executor.py), [`foundry/model_client.py`](../../src/agent_harness/adapters/foundry/model_client.py), [`read_executor.py`](../../src/agent_harness/app/read_executor.py) | The CLI creates the live client, MAF manages model interaction, Foundry supplies the model, and read-tool requests still use the governed executor |
 | Action Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`action_lifecycle.py`](../../src/agent_harness/app/action_lifecycle.py), [`maintenance_request.py`](../../src/agent_harness/adapters/tools/maintenance_request.py), [`in_memory_action_stores.py`](../../src/agent_harness/adapters/storage/in_memory_action_stores.py) | The CLI starts the demo, the lifecycle coordinates proposal/decision/resume, the tool performs the approved effect, and storage retains lifecycle state |
-| Grounded Path (library) | [`grounded_executor.py`](../../src/agent_harness/app/grounded_executor.py), [`in_memory.py`](../../src/agent_harness/adapters/retrieval/in_memory.py), [`answerability.py`](../../src/agent_harness/core/answerability.py), [`context.py`](../../src/agent_harness/core/context.py), [`maf/agent_executor.py`](../../src/agent_harness/adapters/maf/agent_executor.py) | Retrieval is scoped and re-verified, answerability decides whether to answer, the context plan bounds what the model sees, and only the answer route calls the MAF runtime |
+| Grounded Path | [`cli.py`](../../src/agent_harness/app/cli.py), [`markdown_corpus.py`](../../src/agent_harness/adapters/retrieval/markdown_corpus.py), [`lexical.py`](../../src/agent_harness/adapters/retrieval/lexical.py), [`in_memory.py`](../../src/agent_harness/adapters/retrieval/in_memory.py), [`grounded_executor.py`](../../src/agent_harness/app/grounded_executor.py), [`answerability.py`](../../src/agent_harness/core/answerability.py), [`context.py`](../../src/agent_harness/core/context.py), [`maf/agent_executor.py`](../../src/agent_harness/adapters/maf/agent_executor.py) | The CLI loads the corpus and validates the profile first, retrieval is scoped, scored and re-verified, answerability decides whether to answer, the context plan bounds what the model sees, and only the answer route calls the MAF runtime |
 
 The application files are reusable safety mechanisms, not one file per profile.
 
@@ -329,6 +332,9 @@ controls.
 | [`test_cli.py`](../../tests/app/test_cli.py) | Application composition |
 | [`test_agent_executor.py`](../../tests/adapters/maf/test_agent_executor.py) | MAF tool selection, source labels, trace correlation, failure normalization, cancellation, act-tier fail-closed behavior, and closing a run another component already started |
 | [`test_grounded_executor.py`](../../tests/app/test_grounded_executor.py) | The grounded path end to end: scope isolation and fail-closed providers, no model call on non-answer routes, bounded retries and context, one audit lifecycle without payloads, and refused profile settings |
+| [`test_cli_grounded.py`](../../tests/app/test_cli_grounded.py) | `grounded-run`: answers with citations, abstains without a model call, label enforcement, and failures reported before any model client exists |
+| [`test_lexical_retrieval.py`](../../tests/conformance/test_lexical_retrieval.py) | Scorer determinism and bounds, relevance ordering, and that text a caller cannot see never changes a visible score |
+| [`test_markdown_corpus.py`](../../tests/conformance/test_markdown_corpus.py) | The corpus loader as untrusted-input handling: links, hidden files, size and count limits, encoding, versioning by content |
 | [`test_model_client.py`](../../tests/adapters/foundry/test_model_client.py) | Foundry environment validation and code-owned invocation ceilings |
 | [`test_grounding.py`](../../tests/conformance/test_grounding.py) | Retrieval isolation, source lineage, freshness, untrusted labels, citations, and answerability routes |
 | [`chunker_suite.py`](../../tests/conformance/chunker_suite.py), [`test_markdown_chunker.py`](../../tests/conformance/test_markdown_chunker.py) | The reusable chunker contract (identity, scoping, bounds, hostile text, retrieval flow) and Markdown structure rules; an adapter supplies only a factory |

@@ -49,6 +49,16 @@ class RetrievalProvider(Protocol):
     ) -> Sequence[RetrievedItem]: ...
 
 
+class RelevanceScorer(Protocol):
+    """Score candidates for a query, one value in [0, 1] per candidate, in candidate order.
+
+    Implementations may use statistics of the candidates they are given, so a caller must pass only
+    evidence the requester is authorized to see; scores must not depend on anything else.
+    """
+
+    def score(self, query: str, candidates: Sequence[RetrievedItem]) -> Sequence[float]: ...
+
+
 class Chunker(Protocol):
     """Split one source version into scoped, attributable evidence chunks.
 

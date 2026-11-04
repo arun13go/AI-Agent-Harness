@@ -9,6 +9,7 @@ def test_adapter_contracts_are_protocols() -> None:
     contract_types = (
         contracts.ModelClient,
         contracts.RetrievalProvider,
+        contracts.RelevanceScorer,
         contracts.Chunker,
         contracts.ContextPolicy,
         contracts.TokenEstimator,

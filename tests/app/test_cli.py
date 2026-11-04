@@ -62,7 +62,7 @@ def test_cli_reports_missing_foundry_environment(
     assert captured.out == ""
 
 
-def test_cli_rejects_grounded_profile_until_retrieval_is_composed(
+def test_cli_directs_grounded_profile_to_the_grounded_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     exit_code = main(
@@ -87,7 +87,7 @@ def test_cli_rejects_grounded_profile_until_retrieval_is_composed(
     assert exit_code == 2
     error = json.loads(captured.err)
     assert error["error"] == "configuration_error"
-    assert "Phase 2" in error["message"]
+    assert "runs only with the 'grounded-run' command" in error["message"]
     assert captured.out == ""
 
 

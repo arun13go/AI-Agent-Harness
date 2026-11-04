@@ -344,19 +344,12 @@ def _verify_scope(
             raise AuthorizationError("Retrieval returned evidence outside the caller's scope")
 
 
-def create_grounded_executor(
-    *,
-    config: HarnessConfig,
-    retrieval: RetrievalProvider,
-    runtime: GovernedRuntime,
-    audit_sink: AuditSink,
-    minimum_evidence_score: float = 0.5,
-    retrieval_limit: int = 8,
-    maximum_retrieval_attempts: int = 1,
-    clock: Callable[[], datetime] | None = None,
-    event_id_factory: Callable[[], str] | None = None,
-) -> GroundedExecutor:
-    """Compose the grounded path from a validated profile, refusing unsupported settings."""
+def ensure_grounded_profile_supported(config: HarnessConfig) -> AnswerabilityRoute:
+    """Refuse profiles this build cannot run, and return the configured insufficient route.
+
+    Call this before acquiring any model client so a configuration error is not masked by a
+    missing-credentials error.
+    """
 
     if config.profile is not ProfileName.GROUNDED_ASSISTANT:
         raise ConfigurationError("Grounded execution requires the grounded-assistant profile")
@@ -374,7 +367,24 @@ def create_grounded_executor(
             f"The '{route.value}' insufficient-evidence route is not implemented yet; "
             "use clarify, abstain or escalate"
         )
+    return route
 
+
+def create_grounded_executor(
+    *,
+    config: HarnessConfig,
+    retrieval: RetrievalProvider,
+    runtime: GovernedRuntime,
+    audit_sink: AuditSink,
+    minimum_evidence_score: float = 0.5,
+    retrieval_limit: int = 8,
+    maximum_retrieval_attempts: int = 1,
+    clock: Callable[[], datetime] | None = None,
+    event_id_factory: Callable[[], str] | None = None,
+) -> GroundedExecutor:
+    """Compose the grounded path from a validated profile, refusing unsupported settings."""
+
+    route = ensure_grounded_profile_supported(config)
     if not 0 <= maximum_retrieval_attempts < _MAXIMUM_ATTEMPT_CEILING:
         raise ConfigurationError(
             f"Maximum retrieval attempts must be between 0 and {_MAXIMUM_ATTEMPT_CEILING - 1}"

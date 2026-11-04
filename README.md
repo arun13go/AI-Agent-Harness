@@ -17,12 +17,12 @@ Foundry for models, evaluation, and tracing instead of creating another agent ru
 > infrastructure and metadata-only Application Insights export are available. Live checks reject
 > unauthenticated forged headers and instruction overrides, and the platform denies (403) an
 > in-tenant principal with no project role.
-> Phase 2 has started with a deterministic local grounding slice: scoped retrieval, source lineage,
-> freshness, untrusted-content labeling, citations, safe answerability routes, deterministic chunk
-> identity, bounded context plans and a composable grounded path that never calls the model on weak,
-> stale, conflicting, malicious or out-of-scope evidence. It is covered by conformance tests but not
-> yet selectable from the CLI or HTTP host. Azure AI Search and relevance scoring remain
-> subsequent Phase 2 work.
+> Phase 2 has started with a local grounding slice: scoped retrieval with lexical relevance scoring,
+> a Markdown corpus loader, source lineage, freshness, untrusted-content labeling, citations, safe
+> answerability routes, deterministic chunk identity, bounded context plans and a grounded path
+> that never calls the model on weak, stale, conflicting, malicious or out-of-scope evidence. It is
+> runnable locally with `grounded-run` and covered by conformance tests; HTTP hosting, Azure AI
+> Search and measured relevance quality remain subsequent work.
 
 ## Understand it in two minutes
 
@@ -160,11 +160,29 @@ profile and command pairings:
 |---|---|---|
 | Assistant | `run` | Deterministic read path; no Azure required |
 | Assistant | `agent-run` | Live MAF and Foundry read path |
-| Grounded assistant | None yet | Phase 2 will add retrieval, citations, and answerability |
+| Grounded assistant (local profile) | `grounded-run` | Answers only from a local Markdown corpus; needs a Foundry model for the answer route |
+| Grounded assistant (Azure profile) | None yet | Waits for the Azure AI Search adapter |
 | Action agent | `action-demo` | Deterministic proposal, approval, and one-time action path |
 
 Unsupported pairings fail explicitly. The grounded profile cannot silently run without its
 required retrieval and answerability controls.
+
+Run a grounded question against a folder of Markdown files, with the Foundry environment set as
+above. The model is called only when enough relevant, in-scope evidence is found; otherwise the
+command abstains and says so ([ADR 0020](docs/decisions/0020-local-lexical-retrieval-and-corpus-loading.md)):
+
+```powershell
+uv run agent-harness grounded-run `
+  --profile config\profiles\grounded-assistant-local.yaml `
+  --tenant tenant-0001 `
+  --subject subject-0001 `
+  --corpus docs\decisions `
+  --question "Why is the tenant part of the chunk identifier?"
+```
+
+The output names the route, the answer, and the cited source files, and never echoes document
+text. Matching is lexical and deliberately conservative, so a paraphrase that shares few words with
+the text may abstain; use `--minimum-score` to adjust.
 
 Examples live under [`config/profiles/`](config/profiles/).
 

@@ -405,6 +405,13 @@ near-miss questions. A threshold sweep shows no setting that improves recall wit
 questions it must refuse, so the 0.5 default stays and the gap is for semantic retrieval to close.
 Regression guards keep the false-answer rate at zero and the other metrics at their baseline.
 
+The Azure AI Search adapter follows [ADR 0023](../decisions/0023-azure-ai-search-retrieval-adapter.md).
+The provider builds a tenant and label filter from validated inputs, re-checks every returned
+document so a defective index or backend fails closed, and requires an explicit mapping of service
+scores into [0, 1]. It is built against a backend port and a fake, so it is not yet connected to a
+service, the SDK is not a dependency, and the profile setting is still refused. Retrieval quality
+is unmeasured until a live index is scored.
+
 ## Deferred
 
 - Semantic and preference-memory Azure implementations.
@@ -429,11 +436,14 @@ slices. Remaining, in order:
 2. **Relevance baseline** (done: [ADR 0022](../decisions/0022-retrieval-relevance-baseline.md)).
    `eval-retrieval` is the comparison any new retrieval strategy, including the Azure adapter,
    must be scored with. Model-judged groundedness remains Phase 4.
-3. **Azure AI Search reference adapter** (new cloud resource; needs approval), which must pass the
-   shared chunker and retrieval conformance suites and be scored with `eval-retrieval` against the
-   lexical baseline. Move the score threshold, retrieval limit and
-   attempt count into validated configuration with it. Then **host the grounded profile over HTTP
-   with streaming**, using label-filtered queries from this adapter.
+3. **Azure AI Search reference adapter.** Done locally ([ADR 0023](../decisions/0023-azure-ai-search-retrieval-adapter.md)):
+   the provider, scope filter and index document shape pass a shared scope suite beside the
+   in-memory provider, against a fake backend. Remaining, in order: the Azure SDK backend and an
+   index definition in `infra/` (new cloud resource; needs approval); a live check that tenant and
+   label isolation hold in the real service; scoring with `eval-retrieval` against the lexical
+   baseline; and moving the score mapping, retrieval limit and attempt count into validated
+   configuration, which also lifts the `azure-ai-search` refusal. Then **host the grounded profile
+   over HTTP with streaming**, using label-filtered queries from this adapter.
 4. **Word and PDF ingestion** (planned; after the previous step decides the Azure ingestion path).
    Today only Markdown is ingested. Each format becomes an *extractor* that turns the original file
    into structured text, so the existing chunker, chunk identity ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md))

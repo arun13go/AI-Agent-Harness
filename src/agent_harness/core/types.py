@@ -159,6 +159,28 @@ class AnswerabilityDecision:
     citations: tuple[Citation, ...] = ()
 
 
+class ContextRoute(StrEnum):
+    FITS = "fits"
+    TRIMMED = "trimmed"
+
+
+@dataclass(frozen=True, slots=True)
+class ContextPlan:
+    """Messages within a hard budget plus handles for anything left out.
+
+    Omitted and rejected evidence are reported by identifier only, never by content, so callers
+    can fetch omitted items by handle and audit counts without copying payloads.
+    """
+
+    messages: tuple[Message, ...]
+    estimated_tokens: int
+    included_evidence_ids: tuple[str, ...]
+    omitted_evidence_ids: tuple[str, ...]
+    rejected_evidence_ids: tuple[str, ...]
+    omitted_history_count: int
+    route: ContextRoute
+
+
 @dataclass(frozen=True, slots=True)
 class MemoryRecord:
     record_id: str

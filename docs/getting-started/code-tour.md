@@ -66,6 +66,7 @@ Change the decision to `denied` to confirm that the effect count remains zero.
 | [`types.py`](../../src/agent_harness/core/types.py) | Defines identity, requests, tools, proposals, approvals, checkpoints, state, events, retrieved evidence, citations, and answerability decisions | All runners and adapters |
 | [`contracts.py`](../../src/agent_harness/core/contracts.py) | Defines interfaces that tools, stores, model clients, retrieval providers, answerability policies, and exporters must implement | Runners and adapters |
 | [`answerability.py`](../../src/agent_harness/core/answerability.py) | Applies deterministic safe routes to sufficient, weak, stale, conflicting, malicious, or missing evidence | Grounded application composition |
+| [`context.py`](../../src/agent_harness/core/context.py) | Builds a bounded `ContextPlan`: keeps instructions and the current request, fits the newest history and best evidence to a hard token budget, labels evidence untrusted, and reports omitted or rejected evidence by handle ([ADR 0018](../decisions/0018-bounded-context-plans.md)) | Grounded application composition |
 | [`configuration.py`](../../src/agent_harness/core/configuration.py) | Loads YAML, validates JSON Schema, and returns immutable typed settings | CLI composition |
 | [`registry.py`](../../src/agent_harness/core/registry.py) | Resolves trusted implementations by explicit name; rejects unknown or duplicate names | Read and action runners |
 | [`governance.py`](../../src/agent_harness/core/governance.py) | Checks identity, deadline, permission tier, tool input, execution limits, and tenant, label and source-lineage validity for ingestion | Read and action runners; chunkers and retrieval |
@@ -325,6 +326,7 @@ controls.
 | [`test_model_client.py`](../../tests/adapters/foundry/test_model_client.py) | Foundry environment validation and code-owned invocation ceilings |
 | [`test_grounding.py`](../../tests/conformance/test_grounding.py) | Retrieval isolation, source lineage, freshness, untrusted labels, citations, and answerability routes |
 | [`chunker_suite.py`](../../tests/conformance/chunker_suite.py), [`test_markdown_chunker.py`](../../tests/conformance/test_markdown_chunker.py) | The reusable chunker contract (identity, scoping, bounds, hostile text, retrieval flow) and Markdown structure rules; an adapter supplies only a factory |
+| [`context_suite.py`](../../tests/conformance/context_suite.py), [`test_context_policy.py`](../../tests/conformance/test_context_policy.py) | The reusable context-policy contract (hard budget, mandatory content, evidence labeling, rejection, handles) and an end-to-end check through the MAF executor |
 | [`test_schemas.py`](../../tests/schema/test_schemas.py) | Configuration or event schemas |
 
 ## Common Extension Paths

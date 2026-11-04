@@ -11,6 +11,7 @@ def test_adapter_contracts_are_protocols() -> None:
         contracts.RetrievalProvider,
         contracts.Chunker,
         contracts.ContextPolicy,
+        contracts.TokenEstimator,
         contracts.AnswerabilityPolicy,
         contracts.MemoryStore,
         contracts.RunStateStore,

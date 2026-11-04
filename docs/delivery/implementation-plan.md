@@ -370,8 +370,15 @@ A Markdown chunker keeps headings, tables and code blocks whole, derives identif
 source, version and structural path (not from labels or content), and enforces size bounds. A
 reusable conformance suite defines these rules for any chunker, and shared validators now guard
 tenant scope, authorization labels and source lineage for every ingestion path. Local tests,
-including mutation checks that break identity on purpose, Pyright and Ruff pass. This increment does
-not yet implement Azure AI Search, grounded prompt composition, or a runnable grounded profile.
+including mutation checks that break identity on purpose, Pyright and Ruff pass.
+
+The bounded-context slice follows [ADR 0018](../decisions/0018-bounded-context-plans.md). A
+deterministic policy keeps instructions and the current request, fits the newest history and the
+best-ranked evidence to a hard token budget, always labels evidence as untrusted data, rejects
+malicious or unsafe evidence, and reports anything left out by handle instead of shortening it. A
+reusable suite defines the contract, and an end-to-end test sends a planned context through the MAF
+executor to show hostile evidence never reaches the instructions. This increment does not yet
+implement Azure AI Search, grounded prompt composition, or a runnable grounded profile.
 
 ## Deferred
 
@@ -386,11 +393,13 @@ not yet implement Azure AI Search, grounded prompt composition, or a runnable gr
 ## Current Next Step
 
 Continue **Phase 2: Grounding and context** from the completed deterministic retrieval,
-answerability and chunk-identity slices. Compose source-labeled evidence into a local grounded
-application path without treating retrieved content as instructions: a context policy with a hard
-token budget, a deterministic overflow route and result handles, then the grounded profile wired to
-the in-memory adapters. Stabilize that boundary before adding the Azure AI Search reference adapter,
-which must pass the shared chunker and retrieval conformance suites.
+answerability, chunk-identity and bounded-context slices. Compose them into a local grounded
+application path: retrieve with scope, assess answerability, build the context plan, run through
+the governed MAF executor, and emit audit events from the plan's counts, with a runnable
+grounded-assistant profile wired to the in-memory adapters. Resolve the `compaction: summarize`
+setting first, because the policy and the MAF runtime only truncate. Stabilize that boundary before
+adding the Azure AI Search reference adapter, which must pass the shared chunker and retrieval
+conformance suites.
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

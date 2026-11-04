@@ -13,6 +13,7 @@ from agent_harness.core.types import (
     ApprovalResult,
     ArtifactRecord,
     Checkpoint,
+    ContextPlan,
     IdempotencyRecord,
     IdentityScope,
     MemoryRecord,
@@ -65,15 +66,27 @@ class Chunker(Protocol):
     ) -> Sequence[RetrievedItem]: ...
 
 
+class TokenEstimator(Protocol):
+    """Count tokens deterministically; a budget is hard only relative to its estimator."""
+
+    def count(self, text: str) -> int: ...
+
+
 class ContextPolicy(Protocol):
-    def build_messages(
+    """Select instructions, history and evidence within a hard budget.
+
+    Mandatory content (instructions and the current request) is never trimmed: if it cannot fit,
+    the policy raises ``ContextBudgetError``. Evidence is always labeled untrusted data.
+    """
+
+    def build(
         self,
         *,
         instructions: Sequence[Message],
         history: Sequence[Message],
         evidence: Sequence[RetrievedItem],
         maximum_tokens: int,
-    ) -> Sequence[Message]: ...
+    ) -> ContextPlan: ...
 
 
 class AnswerabilityPolicy(Protocol):

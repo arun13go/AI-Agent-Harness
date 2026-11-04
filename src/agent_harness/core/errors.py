@@ -45,6 +45,12 @@ class ExecutionTimeoutError(HarnessError):
     code = "execution_timeout"
 
 
+class ContextBudgetError(ExecutionLimitError):
+    """Mandatory context (instructions and the current request) cannot fit the budget."""
+
+    code = "context_budget_exceeded"
+
+
 class ToolExecutionError(HarnessError):
     code = "tool_execution_error"
 

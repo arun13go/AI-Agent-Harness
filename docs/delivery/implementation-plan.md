@@ -347,7 +347,7 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 | Phase | Deliverable | Exit evidence |
 |---|---|---|
-| 2: Grounding and context | Azure AI Search ingestion and retrieval, citations, freshness, compaction, episodic-memory policy, and answerability routes | Weak, stale, conflicting, and sufficient evidence follow the correct route |
+| 2: Grounding and context | Azure AI Search ingestion and retrieval, multi-format ingestion (Word and PDF), citations, freshness, compaction, episodic-memory policy, and answerability routes | Weak, stale, conflicting, and sufficient evidence follow the correct route; Word and PDF sources chunk with the same identity, scope and safety rules as Markdown |
 | 3: Azure reference adapters | Cosmos DB memory and run state, Blob artifacts, Azure cache and audit, retention, and Application Insights export | In-memory and Azure adapters pass the same isolation, concurrency, expiry, deletion, and replay tests |
 | 4: Evaluation and operations | Versioned datasets, deterministic and Foundry evaluators, operational SLOs, outcome thresholds, and regression comparison | One go-live report covers policy, quality, safety, latency, cost, and telemetry |
 | 5: Deployment and CI hardening | Modular Bicep, workload-identity CI, preflight, cleanup, production guidance, generated ARM, and drift checks | Both deployment paths pass clean-resource-group tests and CI rejects drift |
@@ -422,8 +422,25 @@ in order:
 3. **Azure AI Search reference adapter** (new cloud resource; needs approval), which must pass the
    shared chunker and retrieval conformance suites. Move the score threshold, retrieval limit and
    attempt count into validated configuration with it.
-4. **Live validation** of the grounded path against a Foundry model (needs approval).
-5. **Episodic-memory policy**, listed in the Phase 2 deliverable, which has no design yet:
+4. **Word and PDF ingestion** (planned; after the previous step decides the Azure ingestion path).
+   Today only Markdown is ingested. Each format becomes an *extractor* that turns the original file
+   into structured text, so the existing chunker, chunk identity ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md))
+   and scoping rules stay unchanged. Scope and order:
+   - **Word:** `.docx` first, extracted to Markdown (headings and tables map reliably). Legacy
+     binary `.doc` needs a conversion step; the ADR decides whether to support it or reject it with
+     a clear error.
+   - **PDF with a text layer:** extract text, infer headings, and handle tables conservatively.
+   - **Scanned PDFs and images:** OCR and layout analysis, most likely Azure AI Document
+     Intelligence, which may also make local PDF extraction a development convenience only.
+   - **Untrusted-input rules for every extractor:** hard limits on size, pages, archive expansion
+     and parse time, run in a bounded step that fails closed; macro-enabled and encrypted files
+     rejected; an explicit policy for hidden text, comments, tracked changes and metadata; all
+     extracted text labeled untrusted; `sourceVersion` stays a hash of the original bytes.
+   - **Deliverables:** an ADR, extractors behind a contract, fixtures per format (including
+     hostile files), and the shared chunker suite run over extractor output. Pin each new parsing
+     dependency, since these libraries parse attacker-controlled files.
+5. **Live validation** of the grounded path against a Foundry model (needs approval).
+6. **Episodic-memory policy**, listed in the Phase 2 deliverable, which has no design yet:
    schedule it or move it to Phase 3 explicitly.
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching

@@ -43,6 +43,8 @@ produces the same identifiers. It covers identity only, not ranking, embeddings 
 - Inserting an earlier section keeps unrelated chunk identifiers stable; only repeated heading
   paths after the insertion shift their `~n` suffix.
 - Setext headings and HTML blocks are not recognized; they stay in the surrounding section as text.
+- Only Markdown is ingested today. Word and PDF are planned as extractors that feed this chunker
+  (see the implementation plan), so identity and scoping rules do not change per format.
 - A shared conformance suite (`tests/conformance/chunker_suite.py`) defines these rules for any
   chunker; the Azure AI Search ingestion path must pass it before selection.
 - Stale-content protection depends on producers versioning sources; an index adapter should also

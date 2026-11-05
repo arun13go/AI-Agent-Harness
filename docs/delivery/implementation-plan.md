@@ -410,7 +410,7 @@ and was exercised on a Free-tier service in a dedicated resource group (keyless,
 granted to the operator only). The provider builds a tenant and label pre-filter from validated
 inputs, enforces the exact label rule on the results, fails closed on out-of-scope hits, and
 requires an explicit mapping of service scores into [0, 1]. A REST backend, an index definition,
-and `search-index` commands load the corpus and run a tenant and label isolation check. The live
+and `search-index` commands synchronize a corpus and run a tenant and label isolation check. The live
 run found that the service cannot express the label rule as one filter, which was fixed and then
 passed 8 of 8 isolation cases. Scored on the same 33 questions, raw keyword (BM25) scores find the
 right documents but cannot separate answerable from unanswerable questions at any cutoff. The free
@@ -457,13 +457,19 @@ slices. Remaining, in order:
    minimum score, limit, attempts and the index are now validated profile settings and the profile
    selects the adapter ([ADR 0024](../decisions/0024-retrieval-settings-as-profile-configuration.md)),
    confirmed by a profile-driven evaluation and the first live grounded run through Azure
-   retrieval and a Foundry model. Remaining, in order: retry throttled and unavailable responses
-   in the REST backend (one unexplained transient failure was seen); re-check the cutoff on a
-   larger, more realistic question set and corpus; swap to the Azure SDK if it can be locked.
+   retrieval and a Foundry model. Remaining, in order: retry throttled, unavailable and (once,
+   after a token refresh) unauthorized responses in the REST backend (two transient failures were
+   seen in about thirty live runs); re-check the cutoff on a larger, more realistic question set
+   and corpus; swap to the Azure SDK if it can be locked.
    Vector or hybrid search, which may recover paraphrases, needs embeddings and cost approval.
    Then **host the grounded profile over HTTP with streaming**, using label-filtered queries from
    this adapter.
-4. **Word and PDF ingestion** (planned; after the previous step decides the Azure ingestion path).
+   **Ingestion** is done for Markdown ([ADR 0025](../decisions/0025-corpus-synchronization.md)):
+   `search-index --action sync` makes an index corpus hold exactly the chunks a folder produces
+   for one tenant, adding changed chunks, removing stale ones, renewing freshness, refusing to
+   overwrite another corpus and guarding large deletions, verified live. Scheduling a sync and
+   removing a single document by name are not provided.
+4. **Word and PDF ingestion** (planned; extractors now feed the synchronization step above).
    Today only Markdown is ingested. Each format becomes an *extractor* that turns the original file
    into structured text, so the existing chunker, chunk identity ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md))
    and scoping rules stay unchanged. Scope and order:

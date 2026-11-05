@@ -210,11 +210,19 @@ granted to you:
 ```powershell
 $env:AZURE_SEARCH_ENDPOINT = "https://<service>.search.windows.net"
 uv run agent-harness search-index --endpoint $env:AZURE_SEARCH_ENDPOINT `
-  --index harness-chunks --action load      # also: isolation, delete
+  --index harness-chunks --action sync --tenant tenant-eval-0001 `
+  --corpus evals\grounded-relevance\corpus --corpus-id grounded-relevance
 uv run agent-harness eval-retrieval --profile config\profiles\grounded-assistant.yaml
 uv run agent-harness grounded-run --profile config\profiles\grounded-assistant.yaml `
   --tenant tenant-eval-0001 --subject subject-0001 --question "How do I restart the API service?"
 ```
+
+`search-index --action sync` makes the index hold exactly the chunks a Markdown folder produces
+for one tenant and corpus: it adds new and changed chunks, removes stale ones, renews freshness,
+refuses to overwrite another corpus, and refuses a large deletion without `--allow-large-delete`.
+Preview with `--dry-run`, and add `--corpus-label` to restrict readers
+([ADR 0025](docs/decisions/0025-corpus-synchronization.md)). Other actions are `isolation`, which
+checks tenant and label separation with canary documents, and `delete`, which drops an index.
 
 `--search-index` scores a different index, and `--minimum-score` overrides the profile.
 `grounded-run` needs the Foundry model variables as well. Do not pass `--corpus` with the Azure

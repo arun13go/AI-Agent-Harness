@@ -36,7 +36,8 @@ from agent_harness.app.grounded_executor import (
 )
 from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.app.retrieval_eval import evaluate_retrieval
-from agent_harness.app.search_live import build_backend, check_isolation, load_corpus
+from agent_harness.app.search_ingest import sync_corpus
+from agent_harness.app.search_live import build_backend, check_isolation
 from agent_harness.core.configuration import HarnessConfig, ProfileName, load_harness_config
 from agent_harness.core.contracts import RetrievalProvider, Tool
 from agent_harness.core.errors import ConfigurationError, HarnessError
@@ -200,8 +201,30 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     search_parser.add_argument("--endpoint", required=True)
     search_parser.add_argument("--index", required=True)
-    search_parser.add_argument("--action", choices=("load", "isolation", "delete"), required=True)
-    search_parser.add_argument("--dataset", type=Path, default=Path("evals/grounded-relevance"))
+    search_parser.add_argument("--action", choices=("sync", "isolation", "delete"), required=True)
+    search_parser.add_argument(
+        "--corpus", type=Path, help="Markdown folder to synchronize (sync only)"
+    )
+    search_parser.add_argument("--tenant", help="Tenant that owns the corpus (sync only)")
+    search_parser.add_argument(
+        "--corpus-id",
+        help="Name of the corpus within the tenant; a sync touches only this corpus (sync only)",
+    )
+    search_parser.add_argument(
+        "--corpus-label",
+        action="append",
+        default=[],
+        help="Access label required to read the corpus (repeatable, sync only)",
+    )
+    search_parser.add_argument("--fresh-days", type=int, default=30)
+    search_parser.add_argument(
+        "--dry-run", action="store_true", help="Report what a sync would change, and change nothing"
+    )
+    search_parser.add_argument(
+        "--allow-large-delete",
+        action="store_true",
+        help="Allow a sync that removes more than half of an existing corpus",
+    )
     return parser
 
 
@@ -441,9 +464,25 @@ def _require_valid_minimum_score(minimum_score: float | None) -> None:
 async def _run_search_index(args: argparse.Namespace) -> dict[str, object]:
     """Operate the live search index named on the command line."""
 
+    if args.action == "sync":
+        if args.corpus is None or args.tenant is None or args.corpus_id is None:
+            raise ConfigurationError("--corpus, --tenant and --corpus-id are required for sync")
+        items = load_markdown_corpus(
+            args.corpus,
+            tenant_scope=args.tenant,
+            authorization_labels=args.corpus_label,
+            ingested_at=datetime.now(UTC),
+            fresh_for=timedelta(days=args.fresh_days),
+        )
+        return await sync_corpus(
+            build_backend(endpoint=args.endpoint, index_name=args.index),
+            items=items,
+            tenant_scope=args.tenant,
+            corpus_id=args.corpus_id,
+            dry_run=args.dry_run,
+            allow_large_delete=args.allow_large_delete,
+        )
     backend = build_backend(endpoint=args.endpoint, index_name=args.index)
-    if args.action == "load":
-        return await load_corpus(backend, args.dataset)
     if args.action == "isolation":
         return await check_isolation(backend)
     await backend.delete_index()

@@ -41,7 +41,9 @@ improves. The live results below show that keyword search alone does not.
   and is the reason the live check must be rerun when label use grows.
 - **No string splicing of untrusted values.** Tenant and labels pass the existing validators,
   whose patterns exclude quotes, commas, spaces and control characters, and values are quoted as
-  OData literals as a second layer. Only `tenantScope` and `authorizationLabels` are filterable.
+  OData literals as a second layer. Only the key and the three scope fields (`tenantScope`,
+  `authorizationLabels` and, since [ADR 0025](0025-corpus-synchronization.md), `corpusId`) are
+  filterable.
 - **Scores are mapped, not trusted.** Service scores are unbounded and not comparable across
   queries, but answerability needs [0, 1]. The provider requires an explicit monotonic mapping;
   `saturating_score(half_point)` is the first. Zero scores are dropped and ties break by

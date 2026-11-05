@@ -23,6 +23,7 @@ from agent_harness.core.errors import (
 from agent_harness.core.governance import (
     validate_authorization_labels,
     validate_identity_scope,
+    validate_tenant_scope,
 )
 from agent_harness.core.types import (
     EvidenceFlag,
@@ -34,11 +35,13 @@ from agent_harness.core.types import (
 SCORE_KEY = "@search.score"
 TENANT_FIELD = "tenantScope"
 LABELS_FIELD = "authorizationLabels"
+CORPUS_FIELD = "corpusId"
 
-# Names, types and attributes of the index fields this adapter reads and writes. Only the two
-# scope fields are filterable, and the key field is the chunk identifier.
+# Names, types and attributes of the index fields this adapter reads and writes. The key is the
+# chunk identifier. Only the key and the three scope fields are filterable, and only the key is
+# sortable, which lets ingestion page through a corpus in a stable order.
 INDEX_FIELDS: tuple[Mapping[str, Any], ...] = (
-    {"name": "id", "type": "Edm.String", "key": True, "filterable": False},
+    {"name": "id", "type": "Edm.String", "key": True, "filterable": True, "sortable": True},
     {"name": "content", "type": "Edm.String", "searchable": True},
     {"name": "sourceId", "type": "Edm.String"},
     {"name": "sourceVersion", "type": "Edm.String"},
@@ -47,10 +50,12 @@ INDEX_FIELDS: tuple[Mapping[str, Any], ...] = (
     {"name": "freshUntil", "type": "Edm.DateTimeOffset"},
     {"name": TENANT_FIELD, "type": "Edm.String", "filterable": True},
     {"name": LABELS_FIELD, "type": "Collection(Edm.String)", "filterable": True},
+    {"name": CORPUS_FIELD, "type": "Edm.String", "filterable": True},
     {"name": "evidenceFlags", "type": "Collection(Edm.String)"},
 )
 
 _DOCUMENT_KEY = re.compile(r"^[A-Za-z0-9_=-]{1,1024}$")
+_CORPUS_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _MAX_TEXT = 4096
 # The label rule is enforced after the service ranks, so ask for more than the caller needs.
 _OVERFETCH = 5
@@ -121,8 +126,40 @@ def build_scope_filter(identity: IdentityScope, authorization_labels: Sequence[s
     return f"{TENANT_FIELD} eq {_literal(identity.tenant_scope)} and {label_clause}"
 
 
-def evidence_to_document(item: RetrievedItem) -> dict[str, Any]:
-    """Convert evidence to the index document that ``AzureSearchRetrievalProvider`` reads back."""
+def validate_corpus_id(corpus_id: str) -> str:
+    """Return a corpus identifier that is safe to store, filter on and show in reports."""
+
+    if not _CORPUS_ID.fullmatch(corpus_id):
+        raise InputValidationError(
+            "Corpus ID must be 1 to 64 lowercase letters, digits or dashes, starting with a "
+            "letter or digit"
+        )
+    return corpus_id
+
+
+def build_corpus_filter(tenant_scope: str, corpus_id: str) -> str:
+    """Return the OData filter selecting exactly one corpus of one tenant."""
+
+    validate_tenant_scope(tenant_scope)
+    return f"{TENANT_FIELD} eq {_literal(tenant_scope)} and {CORPUS_FIELD} eq " + _literal(
+        validate_corpus_id(corpus_id)
+    )
+
+
+def build_id_filter(document_ids: Sequence[str]) -> str:
+    """Return the OData filter selecting documents by key."""
+
+    if not document_ids or any(not _DOCUMENT_KEY.fullmatch(value) for value in document_ids):
+        raise InputValidationError("Document IDs must be non-empty search document keys")
+    return f"search.in(id, {_literal(','.join(document_ids))}, ',')"
+
+
+def evidence_to_document(item: RetrievedItem, *, corpus_id: str | None = None) -> dict[str, Any]:
+    """Convert evidence to the index document that ``AzureSearchRetrievalProvider`` reads back.
+
+    ``corpus_id`` records which ingested corpus owns the chunk so a later sync can find the chunks
+    it is responsible for. Retrieval does not use it.
+    """
 
     if not _DOCUMENT_KEY.fullmatch(item.item_id):
         raise InputValidationError("Evidence ID is not a valid search document key")
@@ -136,6 +173,7 @@ def evidence_to_document(item: RetrievedItem) -> dict[str, Any]:
         "freshUntil": item.source.fresh_until.astimezone(UTC).isoformat(),
         TENANT_FIELD: item.tenant_scope,
         LABELS_FIELD: list(item.authorization_labels),
+        CORPUS_FIELD: None if corpus_id is None else validate_corpus_id(corpus_id),
         "evidenceFlags": [flag.value for flag in item.evidence_flags],
     }
 

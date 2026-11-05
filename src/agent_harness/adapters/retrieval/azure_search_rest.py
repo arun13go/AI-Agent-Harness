@@ -30,6 +30,9 @@ _SERVICE_HOST = re.compile(r"^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]$")
 _INDEX_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 _MAX_UPLOAD_BATCH = 500
+_LIST_PAGE_SIZE = 1000
+_MAX_LISTED_DOCUMENTS = 100_000
+_FIELD_NAMES = frozenset(field["name"] for field in INDEX_FIELDS)
 _TOKEN_REFRESH_SKEW_SECONDS = 300
 _SELECT = ",".join(field["name"] for field in INDEX_FIELDS)
 
@@ -87,7 +90,7 @@ def index_definition(index_name: str) -> dict[str, Any]:
                 "key": bool(spec.get("key", False)),
                 "searchable": bool(spec.get("searchable", False)),
                 "filterable": bool(spec.get("filterable", False)),
-                "sortable": False,
+                "sortable": bool(spec.get("sortable", False)),
                 "facetable": False,
                 "retrievable": True,
             }
@@ -181,6 +184,65 @@ class AzureSearchRestBackend:
 
         await self._call("DELETE", f"/indexes/{self._index}", None)
 
+    async def delete_documents(self, document_ids: Sequence[str]) -> int:
+        """Delete documents by key in bounded batches and require every request to succeed."""
+
+        deleted = 0
+        for start in range(0, len(document_ids), _MAX_UPLOAD_BATCH):
+            batch = [
+                {"@search.action": "delete", "id": document_id}
+                for document_id in document_ids[start : start + _MAX_UPLOAD_BATCH]
+            ]
+            payload = await self._call(
+                "POST", f"/indexes/{self._index}/docs/index", {"value": batch}
+            )
+            results = _objects(payload.get("value"), "delete result")
+            if len(results) != len(batch) or not all(r.get("status") is True for r in results):
+                raise RetrievalError("Search backend rejected one or more deletions")
+            deleted += len(batch)
+        return deleted
+
+    async def list_documents(
+        self, *, odata_filter: str, select: Sequence[str]
+    ) -> list[dict[str, Any]]:
+        """Return every document matching the filter, in key order, with the selected fields.
+
+        Pages by key rather than by offset so the walk has no service paging ceiling and stays
+        stable while documents are written. The result is bounded.
+        """
+
+        fields = [name for name in select if name in _FIELD_NAMES]
+        if not fields or len(fields) != len(select) or "id" not in fields:
+            raise InputValidationError("Selected fields must be index fields and include 'id'")
+        found: list[dict[str, Any]] = []
+        last_key: str | None = None
+        while True:
+            page_filter = odata_filter
+            if last_key is not None:
+                page_filter = f"({odata_filter}) and id gt {_odata_string(last_key)}"
+            payload = await self._call(
+                "POST",
+                f"/indexes/{self._index}/docs/search",
+                {
+                    "search": "*",
+                    "queryType": "simple",
+                    "filter": page_filter,
+                    "orderby": "id asc",
+                    "top": _LIST_PAGE_SIZE,
+                    "select": ",".join(fields),
+                },
+            )
+            page = _objects(payload.get("value"), "response")
+            found.extend(page)
+            if len(found) > _MAX_LISTED_DOCUMENTS:
+                raise RetrievalError("Search backend returned too many documents to list")
+            if len(page) < _LIST_PAGE_SIZE:
+                return found
+            key = page[-1].get("id")
+            if not isinstance(key, str) or (last_key is not None and key <= last_key):
+                raise RetrievalError("Search backend returned an unexpected page order")
+            last_key = key
+
     async def upload(self, documents: Sequence[Mapping[str, Any]]) -> int:
         """Upload documents in bounded batches and require every one to succeed."""
 
@@ -237,6 +299,10 @@ class AzureSearchRestBackend:
         if not isinstance(parsed, dict):
             raise RetrievalError("Search backend returned an unexpected response")
         return parsed  # pyright: ignore[reportUnknownVariableType]
+
+
+def _odata_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def _reranker_score(hit: Mapping[str, Any]) -> float:

@@ -1,4 +1,4 @@
-"""Operate a live Azure AI Search index: load the evaluation corpus and verify scope isolation.
+"""Operate a live Azure AI Search index: verify scope isolation with canary documents.
 
 The isolation check writes canary documents for two tenants and several labels into a separate
 index, then asks as different callers and requires each to see exactly the documents it is allowed
@@ -12,7 +12,6 @@ import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any, Protocol
 
 from agent_harness.adapters.retrieval.azure_search import (
@@ -25,7 +24,6 @@ from agent_harness.adapters.retrieval.azure_search_rest import (
     AzureSearchRestBackend,
     TokenCredential,
 )
-from agent_harness.app.retrieval_eval import load_evaluation_corpus
 from agent_harness.core.errors import HarnessError
 from agent_harness.core.types import IdentityScope, RetrievedItem, SourceReference
 
@@ -124,15 +122,6 @@ def build_backend(
     return AzureSearchRestBackend(
         endpoint=endpoint, index_name=index_name, credential=chosen, semantic=semantic
     )
-
-
-async def load_corpus(backend: AzureSearchRestBackend, dataset_dir: Path) -> dict[str, object]:
-    """Create the index if needed and upload every evaluation chunk."""
-
-    await backend.create_index()
-    items = load_evaluation_corpus(dataset_dir)
-    uploaded = await backend.upload([evidence_to_document(item) for item in items])
-    return {"action": "load", "uploaded": uploaded}
 
 
 async def check_isolation(

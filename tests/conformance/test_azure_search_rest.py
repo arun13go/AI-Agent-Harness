@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 
 from agent_harness.adapters.retrieval.azure_search import (
+    CORPUS_FIELD,
     INDEX_FIELDS,
     LABELS_FIELD,
     SCORE_KEY,
@@ -373,11 +374,14 @@ def test_index_definition_states_every_attribute_and_limits_filtering_to_scope()
     assert set(fields) == {field["name"] for field in INDEX_FIELDS}
     assert [name for name, field in fields.items() if field["key"]] == ["id"]
     assert {name for name, field in fields.items() if field["filterable"]} == {
+        "id",
         TENANT_FIELD,
         LABELS_FIELD,
+        CORPUS_FIELD,
     }
     assert [name for name, field in fields.items() if field["searchable"]] == ["content"]
-    assert all(not field["sortable"] and not field["facetable"] for field in fields.values())
+    assert [name for name, field in fields.items() if field["sortable"]] == ["id"]
+    assert all(not field["facetable"] for field in fields.values())
     assert all(field["retrievable"] for field in fields.values())
 
 

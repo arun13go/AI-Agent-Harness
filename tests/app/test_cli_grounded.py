@@ -8,9 +8,12 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+import yaml
 
+from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
 from agent_harness.app import cli
 from agent_harness.app.cli import main
+from tests.conformance.fixtures import make_evidence
 from tests.conformance.test_context_policy import RecordingClient
 
 ROOT = Path(__file__).parents[2]
@@ -179,12 +182,8 @@ def test_a_caller_without_the_corpus_label_gets_nothing_and_no_model_call(
     ("profile", "message"),
     [
         (ROOT / "config" / "profiles" / "assistant.yaml", "requires the 'grounded-assistant'"),
-        (
-            ROOT / "config" / "profiles" / "grounded-assistant.yaml",
-            "'azure-ai-search' is not implemented yet",
-        ),
     ],
-    ids=["wrong-profile", "azure-profile"],
+    ids=["wrong-profile"],
 )
 def test_unsupported_profiles_fail_before_a_model_client_is_created(
     capsys: pytest.CaptureFixture[str],
@@ -202,6 +201,150 @@ def test_unsupported_profiles_fail_before_a_model_client_is_created(
 
     assert code == 2 and out == {}
     assert err["error"] == "configuration_error" and message in err["message"]
+
+
+AZURE_PROFILE = ROOT / "config" / "profiles" / "grounded-assistant.yaml"
+
+
+def azure_profile(tmp_path: Path, **retrieval: Any) -> Path:
+    document = yaml.safe_load(AZURE_PROFILE.read_text(encoding="utf-8"))
+    document["retrieval"].update(retrieval)
+    path = tmp_path / "azure-profile.yaml"
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def run_azure(
+    capsys: pytest.CaptureFixture[str], profile: Path, *extra: str
+) -> tuple[int, dict[str, Any], dict[str, Any]]:
+    exit_code = main(
+        [
+            "grounded-run",
+            "--profile",
+            str(profile),
+            "--config-schema",
+            str(ROOT / "config" / "schema" / "v1" / "harness.schema.json"),
+            "--event-schema",
+            str(ROOT / "config" / "schema" / "v1" / "run-event.schema.json"),
+            "--tenant",
+            "tenant-0001",
+            "--subject",
+            "subject-0001",
+            "--question",
+            "How do I restart the API service?",
+            *extra,
+        ]
+    )
+    captured = capsys.readouterr()
+    out: dict[str, Any] = json.loads(captured.out) if captured.out else {}
+    err: dict[str, Any] = json.loads(captured.err) if captured.err else {}
+    return exit_code, out, err
+
+
+def forbid_model_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(config: object) -> None:
+        raise AssertionError("A model client must not be created before configuration is valid")
+
+    monkeypatch.setattr(cli, "create_foundry_chat_client", forbidden)
+
+
+@pytest.mark.parametrize("strategy", ["vector", "hybrid"])
+def test_unimplemented_azure_strategies_fail_before_a_model_client_is_created(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    strategy: str,
+) -> None:
+    forbid_model_client(monkeypatch)
+
+    code, out, err = run_azure(capsys, azure_profile(tmp_path, strategy=strategy))
+
+    assert code == 2 and out == {}
+    assert err["error"] == "configuration_error"
+    assert f"strategy '{strategy}' is not implemented" in err["message"]
+
+
+def test_azure_profile_rejects_a_local_corpus_before_a_model_client_is_created(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, corpus: Path
+) -> None:
+    forbid_model_client(monkeypatch)
+
+    code, out, err = run_azure(capsys, AZURE_PROFILE, "--corpus", str(corpus))
+
+    assert code == 2 and out == {}
+    assert err["error"] == "configuration_error" and "--corpus" in err["message"]
+
+
+def test_azure_profile_without_its_endpoint_variable_fails_before_a_model_client_is_created(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    forbid_model_client(monkeypatch)
+    monkeypatch.delenv("AZURE_SEARCH_ENDPOINT", raising=False)
+
+    code, out, err = run_azure(capsys, AZURE_PROFILE)
+
+    assert code == 2 and out == {}
+    assert "'AZURE_SEARCH_ENDPOINT' is not set" in err["message"]
+
+
+def test_in_memory_profile_requires_a_corpus(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    forbid_model_client(monkeypatch)
+
+    code, out, err = run_azure(capsys, LOCAL_PROFILE)
+
+    assert code == 2 and out == {}
+    assert "--corpus is required" in err["message"]
+
+
+@pytest.fixture
+def strong_but_not_stronger_than_the_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Serve one item scored 0.6: below the shipped profile's 0.625, above the old 0.5 default."""
+
+    provider = InMemoryRetrievalProvider([make_evidence("chunk-a", score=0.6)])
+
+    def serve(config: object, *, environ: object) -> InMemoryRetrievalProvider:
+        del config, environ
+        return provider
+
+    monkeypatch.setattr(cli, "create_azure_search_provider", serve)
+
+
+def test_azure_profile_applies_its_own_minimum_score_and_reports_no_local_corpus(
+    capsys: pytest.CaptureFixture[str],
+    client: FakeFoundryClient,
+    strong_but_not_stronger_than_the_profile: None,
+) -> None:
+    code, out, _ = run_azure(
+        capsys, AZURE_PROFILE, "--caller-label", "group:readers", "--caller-label", "group:ops"
+    )
+
+    assert code == 0
+    assert out["route"] == "clarify"
+    assert out["chunkCount"] is None
+    assert client.requests == []
+
+
+def test_an_explicit_minimum_score_overrides_the_profile(
+    capsys: pytest.CaptureFixture[str],
+    client: FakeFoundryClient,
+    strong_but_not_stronger_than_the_profile: None,
+) -> None:
+    code, out, _ = run_azure(
+        capsys,
+        AZURE_PROFILE,
+        "--minimum-score",
+        "0.5",
+        "--caller-label",
+        "group:readers",
+        "--caller-label",
+        "group:ops",
+    )
+
+    assert code == 0 and out["route"] == "answer"
+    assert out["chunkCount"] is None
+    assert len(client.requests) == 1
 
 
 @pytest.mark.parametrize(

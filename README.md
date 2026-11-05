@@ -197,14 +197,28 @@ exits 1 if a guard in [`evals/grounded-relevance/thresholds.yaml`](evals/grounde
 fails. The false-answer guard is fixed at zero.
 
 An optional Azure AI Search service (Free tier works for evaluation) can be created with
-`searchServiceSku` in [`infra/main.bicep`](infra/main.bicep). It is off by default, uses Entra roles
-only, and is not yet usable for answering because keyword scores cannot abstain; the free semantic
-ranker's scores can, pending configuration wiring
-([ADR 0023](docs/decisions/0023-azure-ai-search-retrieval-adapter.md)). With roles granted to you,
-`agent-harness search-index --action load|isolation|delete` operates an index, and
-`eval-retrieval --search-endpoint <url> --search-index <name> --report-only` scores it, and adding
-`--search-semantic` (needs `searchSemanticSearch: free`) scores the semantic ranker's 0 to 4 reranker
-score instead of keyword scores.
+`searchServiceSku` in [`infra/main.bicep`](infra/main.bicep), and its free semantic ranker with
+`searchSemanticSearch: free`. Both are off by default, and access uses Entra roles only. The
+[`grounded-assistant.yaml`](config/profiles/grounded-assistant.yaml) profile selects it: the
+service address comes from the environment variable named by `retrieval.search.endpointEnv`
+(`AZURE_SEARCH_ENDPOINT`, an output of the deployment), and the index, score threshold, result
+limit and retry count are profile settings
+([ADR 0023](docs/decisions/0023-azure-ai-search-retrieval-adapter.md),
+[ADR 0024](docs/decisions/0024-retrieval-settings-as-profile-configuration.md)). With roles
+granted to you:
+
+```powershell
+$env:AZURE_SEARCH_ENDPOINT = "https://<service>.search.windows.net"
+uv run agent-harness search-index --endpoint $env:AZURE_SEARCH_ENDPOINT `
+  --index harness-chunks --action load      # also: isolation, delete
+uv run agent-harness eval-retrieval --profile config\profiles\grounded-assistant.yaml
+uv run agent-harness grounded-run --profile config\profiles\grounded-assistant.yaml `
+  --tenant tenant-eval-0001 --subject subject-0001 --question "How do I restart the API service?"
+```
+
+`--search-index` scores a different index, and `--minimum-score` overrides the profile.
+`grounded-run` needs the Foundry model variables as well. Do not pass `--corpus` with the Azure
+profile, since the index is external.
 
 Examples live under [`config/profiles/`](config/profiles/).
 

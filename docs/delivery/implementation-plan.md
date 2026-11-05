@@ -415,8 +415,15 @@ run found that the service cannot express the label rule as one filter, which wa
 passed 8 of 8 isolation cases. Scored on the same 33 questions, raw keyword (BM25) scores find the
 right documents but cannot separate answerable from unanswerable questions at any cutoff. The free
 semantic ranker's reranker score can: at a 0.625 cutoff it passes every guard with a 0.59 answer
-rate and no false answers, though paraphrases are still unanswered. The profile setting stays
-refused until the retrieval settings are validated configuration.
+rate and no false answers, though paraphrases are still unanswered.
+
+The retrieval settings follow [ADR 0024](../decisions/0024-retrieval-settings-as-profile-configuration.md).
+The profile now carries `limit`, `minimumScore`, `maximumAttempts` and a `search` block (the
+address comes from a named environment variable), the executor and a provider factory read them,
+and vector and hybrid stay reserved and refused. A profile-driven evaluation reproduced the manual
+results, and a live grounded run answered with a citation from the Azure index through a Foundry
+model and abstained on an off-topic question without calling it. Groundedness of the answers is
+not yet judged.
 
 ## Deferred
 
@@ -446,13 +453,16 @@ slices. Remaining, in order:
    ([ADR 0023](../decisions/0023-azure-ai-search-retrieval-adapter.md)): provider, REST backend,
    `infra/search.bicep`, and a passing live isolation check. Keyword scoring fails the baseline's
    answerability guard, but the free semantic ranker's reranker score passes every guard at a
-   0.625 cutoff (0.59 answer rate, no false answers; paraphrases still unanswered). The adapter
-   stays refused until configuration lands. Remaining, in order: move the retrieval mode, score
-   mapping, minimum score, retrieval limit and attempt count into validated configuration, which
-   lifts the `azure-ai-search` refusal; re-check the cutoff on a larger, more realistic question
-   set and corpus; swap to the Azure SDK if it can be locked. Vector or hybrid search, which may
-   recover paraphrases, needs embeddings and cost approval. Then **host the grounded profile over
-   HTTP with streaming**, using label-filtered queries from this adapter.
+   0.625 cutoff (0.59 answer rate, no false answers; paraphrases still unanswered). Retrieval mode,
+   minimum score, limit, attempts and the index are now validated profile settings and the profile
+   selects the adapter ([ADR 0024](../decisions/0024-retrieval-settings-as-profile-configuration.md)),
+   confirmed by a profile-driven evaluation and the first live grounded run through Azure
+   retrieval and a Foundry model. Remaining, in order: retry throttled and unavailable responses
+   in the REST backend (one unexplained transient failure was seen); re-check the cutoff on a
+   larger, more realistic question set and corpus; swap to the Azure SDK if it can be locked.
+   Vector or hybrid search, which may recover paraphrases, needs embeddings and cost approval.
+   Then **host the grounded profile over HTTP with streaming**, using label-filtered queries from
+   this adapter.
 4. **Word and PDF ingestion** (planned; after the previous step decides the Azure ingestion path).
    Today only Markdown is ingested. Each format becomes an *extractor* that turns the original file
    into structured text, so the existing chunker, chunk identity ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md))

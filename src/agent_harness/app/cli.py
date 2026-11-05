@@ -5,18 +5,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 from agent_harness.adapters.foundry.model_client import create_foundry_chat_client
 from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
-from agent_harness.adapters.retrieval.azure_search import (
-    AzureSearchRetrievalProvider,
-    linear_score,
-    saturating_score,
-)
+from agent_harness.adapters.retrieval.azure_search_factory import create_azure_search_provider
 from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
 from agent_harness.adapters.retrieval.lexical import IdfCoverageScorer
 from agent_harness.adapters.retrieval.markdown_corpus import load_markdown_corpus
@@ -40,7 +38,7 @@ from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.app.retrieval_eval import evaluate_retrieval
 from agent_harness.app.search_live import build_backend, check_isolation, load_corpus
 from agent_harness.core.configuration import HarnessConfig, ProfileName, load_harness_config
-from agent_harness.core.contracts import Tool
+from agent_harness.core.contracts import RetrievalProvider, Tool
 from agent_harness.core.errors import ConfigurationError, HarnessError
 from agent_harness.core.registry import Registry
 from agent_harness.core.types import (
@@ -49,6 +47,7 @@ from agent_harness.core.types import (
     Message,
     ModelRequest,
     RequestContext,
+    RetrievedItem,
     ToolCall,
 )
 
@@ -135,7 +134,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     grounded_parser.add_argument("--tenant", required=True)
     grounded_parser.add_argument("--subject", required=True)
-    grounded_parser.add_argument("--corpus", type=Path, required=True)
+    grounded_parser.add_argument(
+        "--corpus",
+        type=Path,
+        help="Local Markdown folder (in-memory adapter only; Azure AI Search serves its own index)",
+    )
     grounded_parser.add_argument("--question", required=True)
     grounded_parser.add_argument(
         "--corpus-label",
@@ -151,7 +154,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "labels from authentication",
     )
     grounded_parser.add_argument("--fresh-days", type=int, default=30)
-    grounded_parser.add_argument("--minimum-score", type=float, default=0.5)
+    grounded_parser.add_argument(
+        "--minimum-score",
+        type=float,
+        default=None,
+        help="Override the profile's retrieval.minimumScore",
+    )
 
     eval_parser = subparsers.add_parser(
         "eval-retrieval",
@@ -169,28 +177,21 @@ def _build_parser() -> argparse.ArgumentParser:
         default=Path("config/schema/v1/run-event.schema.json"),
     )
     eval_parser.add_argument("--dataset", type=Path, default=Path("evals/grounded-relevance"))
-    eval_parser.add_argument("--minimum-score", type=float, default=0.5)
+    eval_parser.add_argument(
+        "--minimum-score",
+        type=float,
+        default=None,
+        help="Override the profile's retrieval.minimumScore",
+    )
     eval_parser.add_argument(
         "--report-only",
         action="store_true",
         help="Report metrics without checking thresholds.yaml",
     )
     eval_parser.add_argument(
-        "--search-endpoint",
-        help="Score a live Azure AI Search index instead of the local provider",
-    )
-    eval_parser.add_argument("--search-index", help="Index holding the evaluation corpus")
-    eval_parser.add_argument(
-        "--search-half-point",
-        type=float,
-        default=1.0,
-        help="Raw service score that maps to 0.5 (score / (score + half point))",
-    )
-
-    eval_parser.add_argument(
-        "--search-semantic",
-        action="store_true",
-        help="Use the semantic ranker's 0-4 reranker score (needs the semantic plan enabled)",
+        "--search-index",
+        help="Score this Azure AI Search index instead of the profile's (it must hold the "
+        "evaluation corpus for the evaluation tenant)",
     )
 
     search_parser = subparsers.add_parser(
@@ -333,16 +334,27 @@ async def _run_grounded(args: argparse.Namespace) -> dict[str, object]:
     config = load_harness_config(args.profile, args.config_schema)
     _require_profile(config, command="grounded-run", expected=ProfileName.GROUNDED_ASSISTANT)
     ensure_grounded_profile_supported(config)
+    _require_valid_minimum_score(args.minimum_score)
     now = datetime.now(UTC)
-    corpus = load_markdown_corpus(
-        args.corpus,
-        tenant_scope=args.tenant,
-        authorization_labels=args.corpus_label,
-        ingested_at=now,
-        fresh_for=timedelta(days=args.fresh_days),
-    )
-    if not 0.0 <= args.minimum_score <= 1.0:
-        raise ConfigurationError("Minimum score must be between 0 and 1")
+    corpus: Sequence[RetrievedItem] | None = None
+    if config.retrieval.adapter == "azure-ai-search":
+        if args.corpus is not None or args.corpus_label:
+            raise ConfigurationError(
+                "--corpus and --corpus-label apply only to the in-memory adapter; "
+                "Azure AI Search serves the index named in the profile"
+            )
+        retrieval: RetrievalProvider = create_azure_search_provider(config, environ=os.environ)
+    else:
+        if args.corpus is None:
+            raise ConfigurationError("--corpus is required for the in-memory adapter")
+        corpus = load_markdown_corpus(
+            args.corpus,
+            tenant_scope=args.tenant,
+            authorization_labels=args.corpus_label,
+            ingested_at=now,
+            fresh_for=timedelta(days=args.fresh_days),
+        )
+        retrieval = InMemoryRetrievalProvider(corpus, scorer=IdfCoverageScorer())
     identity = IdentityScope(tenant_scope=args.tenant, subject_scope=args.subject)
     context = RequestContext(
         identity=identity,
@@ -356,7 +368,7 @@ async def _run_grounded(args: argparse.Namespace) -> dict[str, object]:
     try:
         executor = create_grounded_executor(
             config=config,
-            retrieval=InMemoryRetrievalProvider(corpus, scorer=IdfCoverageScorer()),
+            retrieval=retrieval,
             runtime=MafAgentExecutor(
                 config=config,
                 client=client,
@@ -390,7 +402,7 @@ async def _run_grounded(args: argparse.Namespace) -> dict[str, object]:
         "includedEvidenceCount": len(response.included_evidence_ids),
         "omittedEvidenceCount": len(response.omitted_evidence_ids),
         "retrievalAttempts": response.retrieval_attempts,
-        "chunkCount": len(corpus),
+        "chunkCount": len(corpus) if corpus is not None else None,
         "modelId": response.model.model_id if response.model is not None else None,
         "auditEventCount": len(audit_sink.events),
     }
@@ -402,21 +414,14 @@ async def _run_eval_retrieval(args: argparse.Namespace) -> dict[str, object]:
     config = load_harness_config(args.profile, args.config_schema)
     _require_profile(config, command="eval-retrieval", expected=ProfileName.GROUNDED_ASSISTANT)
     ensure_grounded_profile_supported(config)
-    if not 0.0 <= args.minimum_score <= 1.0:
-        raise ConfigurationError("Minimum score must be between 0 and 1")
+    _require_valid_minimum_score(args.minimum_score)
     retrieval = None
-    if (args.search_endpoint is None) != (args.search_index is None):
-        raise ConfigurationError("--search-endpoint and --search-index must be given together")
-    if args.search_endpoint is not None:
-        semantic = bool(args.search_semantic)
-        retrieval = AzureSearchRetrievalProvider(
-            build_backend(
-                endpoint=args.search_endpoint, index_name=args.search_index, semantic=semantic
-            ),
-            score_mapper=(
-                linear_score(4.0) if semantic else saturating_score(args.search_half_point)
-            ),
+    if config.retrieval.adapter == "azure-ai-search":
+        retrieval = create_azure_search_provider(
+            config, environ=os.environ, index_name=args.search_index
         )
+    elif args.search_index is not None:
+        raise ConfigurationError("--search-index applies only to the azure-ai-search adapter")
     report = await evaluate_retrieval(
         dataset_dir=args.dataset,
         config=config,
@@ -426,6 +431,11 @@ async def _run_eval_retrieval(args: argparse.Namespace) -> dict[str, object]:
         retrieval=retrieval,
     )
     return report.to_json()
+
+
+def _require_valid_minimum_score(minimum_score: float | None) -> None:
+    if minimum_score is not None and not 0.0 <= minimum_score <= 1.0:
+        raise ConfigurationError("Minimum score must be between 0 and 1")
 
 
 async def _run_search_index(args: argparse.Namespace) -> dict[str, object]:

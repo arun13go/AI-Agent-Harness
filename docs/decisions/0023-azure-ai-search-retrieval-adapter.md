@@ -87,7 +87,7 @@ improves. The live results below show that keyword search alone does not.
 
 The free semantic plan was enabled on the same service (about 1,000 queries a month, no cost; the
 what-if showed only `semanticSearch` changing) and the index gained a semantic configuration over
-the content field. With `--search-semantic` the backend reports the reranker score (0 to 4), and
+the content field. With the semantic strategy the backend reports the reranker score (0 to 4), and
 results the service did not re-rank count as zero. `linear_score(4.0)` maps it to [0, 1] and
 rejects values outside the scale.
 
@@ -109,10 +109,10 @@ not a tuned setting. The free plan is for evaluation; production use needs the p
 
 ## Consequences
 
-- `retrieval.adapter: azure-ai-search` stays refused by `create_grounded_executor`. The semantic
-  score now passes the baseline's guards, so the remaining work is configuration: the retrieval
-  mode, score mapping, minimum score, retrieval limit and attempt count become validated settings,
-  and the choice of cutoff is revisited on a larger, more realistic question set.
+- A profile can now select this adapter: retrieval mode, score mapping, minimum score, limit and
+  attempt count are validated profile settings
+  ([ADR 0024](0024-retrieval-settings-as-profile-configuration.md)). The choice of cutoff is
+  still to be revisited on a larger, more realistic question set.
 - The shared scope suite still runs over both providers against a fake that interprets only the
   filter this adapter emits. The live isolation check is the proof against the real service and
   must be rerun after any change to the filter, the index definition or the service API version.

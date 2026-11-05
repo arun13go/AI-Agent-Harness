@@ -7,11 +7,18 @@ from __future__ import annotations
 import json
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, Self, cast
 
 import yaml
 from jsonschema import Draft202012Validator
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from agent_harness.core.errors import ConfigurationError
 from agent_harness.core.types import JsonValue
@@ -72,11 +79,42 @@ class AnswerabilityConfig(HarnessModel):
     )
 
 
+class SearchConfig(HarnessModel):
+    """Locate an Azure AI Search index without holding the service address in a profile."""
+
+    endpoint_env: str = Field(alias="endpointEnv", pattern=r"^[A-Z][A-Z0-9_]*$")
+    index_name: str = Field(alias="indexName", pattern=r"^[a-z0-9][a-z0-9-]{0,127}$")
+    keyword_score_half_point: float | None = Field(
+        default=None, alias="keywordScoreHalfPoint", gt=0, le=1_000_000
+    )
+
+
 class RetrievalConfig(HarnessModel):
     enabled: bool
     adapter: Literal["none", "in-memory", "azure-ai-search"]
-    strategy: Literal["none", "keyword", "vector", "hybrid"]
+    strategy: Literal["none", "keyword", "semantic", "vector", "hybrid"]
     answerability: AnswerabilityConfig
+    limit: int = Field(default=8, ge=1, le=100)
+    minimum_score: float = Field(default=0.5, alias="minimumScore", ge=0, le=1)
+    maximum_attempts: int = Field(default=1, alias="maximumAttempts", ge=0, le=4)
+    search: SearchConfig | None = None
+
+    @model_validator(mode="after")
+    def _search_settings_match_the_adapter(self) -> Self:
+        # The schema enforces the same rules; this keeps hand-built configs honest too.
+        if self.adapter == "azure-ai-search" and self.search is None:
+            raise ValueError("the azure-ai-search adapter requires a 'search' block")
+        if self.adapter != "azure-ai-search" and self.search is not None:
+            raise ValueError("a 'search' block is only valid with the azure-ai-search adapter")
+        if self.strategy == "semantic" and self.adapter != "azure-ai-search":
+            raise ValueError("the semantic strategy requires the azure-ai-search adapter")
+        if (
+            self.strategy == "semantic"
+            and self.search is not None
+            and self.search.keyword_score_half_point is not None
+        ):
+            raise ValueError("keywordScoreHalfPoint applies only to the keyword strategy")
+        return self
 
 
 class MemoryConfig(HarnessModel):

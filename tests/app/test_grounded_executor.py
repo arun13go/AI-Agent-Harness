@@ -575,10 +575,6 @@ def test_composition_refuses_unsupported_profiles_and_settings(tmp_path: Path) -
     provider = InMemoryRetrievalProvider([], clock=lambda: NOW)
     cases = [
         (load_harness_config(PROFILES / "assistant.yaml", CONFIG_SCHEMA), "grounded-assistant"),
-        (
-            load_harness_config(PROFILES / "grounded-assistant.yaml", CONFIG_SCHEMA),
-            "'azure-ai-search' is not implemented",
-        ),
         (load_config(tmp_path, route="caveat"), "'caveat' insufficient-evidence route"),
     ]
     for config, message in cases:

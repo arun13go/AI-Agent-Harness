@@ -109,6 +109,95 @@ def test_grounded_profile_cannot_disable_answerability_for_any_adapter() -> None
             validator("harness.schema.json").validate(document)
 
 
+def azure_profile() -> dict[str, object]:
+    return deepcopy(load_yaml(PROFILE_DIR / "grounded-assistant.yaml"))
+
+
+def search_block(document: dict[str, object]) -> dict[str, object]:
+    return cast(dict[str, object], cast(dict[str, object], document["retrieval"])["search"])
+
+
+@pytest.mark.parametrize("strategy", ["keyword", "semantic", "vector", "hybrid"])
+def test_azure_strategies_the_schema_allows(strategy: str) -> None:
+    document = azure_profile()
+    cast(dict[str, object], document["retrieval"])["strategy"] = strategy
+
+    validator("harness.schema.json").validate(document)
+
+
+def test_keyword_strategy_accepts_a_score_half_point() -> None:
+    document = azure_profile()
+    cast(dict[str, object], document["retrieval"])["strategy"] = "keyword"
+    search_block(document)["keywordScoreHalfPoint"] = 2.5
+
+    validator("harness.schema.json").validate(document)
+
+
+_REMOVE = object()
+
+
+@pytest.mark.parametrize(
+    ("section", "key", "value"),
+    [
+        ("retrieval", "search", _REMOVE),
+        ("retrieval.search", "extra", "x"),
+        ("retrieval.search", "indexName", "Upper"),
+        ("retrieval.search", "indexName", "-leading"),
+        ("retrieval.search", "indexName", "has space"),
+        ("retrieval.search", "indexName", ""),
+        ("retrieval.search", "indexName", "a" * 129),
+        ("retrieval.search", "endpointEnv", "lower"),
+        ("retrieval.search", "endpointEnv", "1BAD"),
+        ("retrieval.search", "endpointEnv", "HAS-DASH"),
+        ("retrieval.search", "keywordScoreHalfPoint", 2.0),
+        ("retrieval", "limit", 0),
+        ("retrieval", "limit", 101),
+        ("retrieval", "minimumScore", -0.1),
+        ("retrieval", "minimumScore", 1.1),
+        ("retrieval", "maximumAttempts", -1),
+        ("retrieval", "maximumAttempts", 5),
+    ],
+)
+def test_invalid_retrieval_settings_are_rejected(section: str, key: str, value: object) -> None:
+    document = azure_profile()
+    target: dict[str, object] = document
+    for part in section.split("."):
+        target = cast(dict[str, object], target[part])
+    if value is _REMOVE:
+        del target[key]
+    else:
+        target[key] = value
+
+    with pytest.raises(ValidationError):
+        validator("harness.schema.json").validate(document)
+
+
+@pytest.mark.parametrize("half_point", [0, -1, 1_000_001])
+def test_keyword_half_point_must_be_positive_and_bounded(half_point: float) -> None:
+    document = azure_profile()
+    cast(dict[str, object], document["retrieval"])["strategy"] = "keyword"
+    search_block(document)["keywordScoreHalfPoint"] = half_point
+
+    with pytest.raises(ValidationError):
+        validator("harness.schema.json").validate(document)
+
+
+@pytest.mark.parametrize("adapter", ["in-memory", "none"])
+def test_a_search_block_is_rejected_for_other_adapters(adapter: str) -> None:
+    document = deepcopy(load_yaml(PROFILE_DIR / "grounded-assistant-local.yaml"))
+    retrieval = cast(dict[str, object], document["retrieval"])
+    retrieval["search"] = {"endpointEnv": "AZURE_SEARCH_ENDPOINT", "indexName": "chunks"}
+    if adapter == "none":
+        document = deepcopy(load_yaml(PROFILE_DIR / "assistant.yaml"))
+        cast(dict[str, object], document["retrieval"])["search"] = {
+            "endpointEnv": "AZURE_SEARCH_ENDPOINT",
+            "indexName": "chunks",
+        }
+
+    with pytest.raises(ValidationError):
+        validator("harness.schema.json").validate(document)
+
+
 def test_normalized_run_event_is_valid() -> None:
     event = {
         "schemaVersion": 1,

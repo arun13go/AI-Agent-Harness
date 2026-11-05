@@ -357,9 +357,13 @@ def ensure_grounded_profile_supported(config: HarnessConfig) -> AnswerabilityRou
         raise ConfigurationError(
             "The grounded-assistant profile requires retrieval and answerability"
         )
-    if config.retrieval.adapter != "in-memory":
+    if config.retrieval.adapter == "azure-ai-search" and config.retrieval.strategy not in (
+        "keyword",
+        "semantic",
+    ):
         raise ConfigurationError(
-            f"Retrieval adapter '{config.retrieval.adapter}' is not implemented yet"
+            f"Retrieval strategy '{config.retrieval.strategy}' is not implemented yet; "
+            "use keyword or semantic"
         )
     route = AnswerabilityRoute(config.retrieval.answerability.on_insufficient_evidence)
     if route not in _SUPPORTED_ROUTES:
@@ -376,25 +380,39 @@ def create_grounded_executor(
     retrieval: RetrievalProvider,
     runtime: GovernedRuntime,
     audit_sink: AuditSink,
-    minimum_evidence_score: float = 0.5,
-    retrieval_limit: int = 8,
-    maximum_retrieval_attempts: int = 1,
+    minimum_evidence_score: float | None = None,
+    retrieval_limit: int | None = None,
+    maximum_retrieval_attempts: int | None = None,
     clock: Callable[[], datetime] | None = None,
     event_id_factory: Callable[[], str] | None = None,
 ) -> GroundedExecutor:
-    """Compose the grounded path from a validated profile, refusing unsupported settings."""
+    """Compose the grounded path from a validated profile, refusing unsupported settings.
+
+    The score threshold, retrieval limit and attempt count come from the profile unless a caller
+    passes an explicit value, such as an evaluation sweeping the threshold.
+    """
 
     route = ensure_grounded_profile_supported(config)
-    if not 0 <= maximum_retrieval_attempts < _MAXIMUM_ATTEMPT_CEILING:
+    settings = config.retrieval
+    minimum_score = (
+        settings.minimum_score if minimum_evidence_score is None else minimum_evidence_score
+    )
+    limit = settings.limit if retrieval_limit is None else retrieval_limit
+    attempts = (
+        settings.maximum_attempts
+        if maximum_retrieval_attempts is None
+        else maximum_retrieval_attempts
+    )
+    if not 0 <= attempts < _MAXIMUM_ATTEMPT_CEILING:
         raise ConfigurationError(
             f"Maximum retrieval attempts must be between 0 and {_MAXIMUM_ATTEMPT_CEILING - 1}"
         )
     return GroundedExecutor(
         retrieval=retrieval,
         answerability=DeterministicAnswerabilityPolicy(
-            minimum_score=minimum_evidence_score,
+            minimum_score=minimum_score,
             insufficient_evidence_route=route,
-            maximum_retrieval_attempts=maximum_retrieval_attempts,
+            maximum_retrieval_attempts=attempts,
         ),
         context_policy=DeterministicContextPolicy(),
         runtime=runtime,
@@ -402,7 +420,7 @@ def create_grounded_executor(
         # Stay below the runtime's own truncation threshold so planned context is never cut again.
         context_budget_tokens=config.context.max_input_tokens * 4 // 5,
         insufficient_route=route,
-        retrieval_limit=retrieval_limit,
+        retrieval_limit=limit,
         clock=clock,
         event_id_factory=event_id_factory,
     )

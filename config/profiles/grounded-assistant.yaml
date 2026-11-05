@@ -17,7 +17,16 @@ context:
 retrieval:
   enabled: true
   adapter: azure-ai-search
-  strategy: hybrid
+  strategy: semantic
+  # The service address comes from the named environment variable, never from this file.
+  search:
+    endpointEnv: AZURE_SEARCH_ENDPOINT
+    indexName: harness-chunks
+  # Reranker scores run 0 to 4, so 0.625 means 2.5. Chosen on a small synthetic evaluation
+  # set (ADR 0023); recheck it on your own questions before relying on it.
+  minimumScore: 0.625
+  limit: 8
+  maximumAttempts: 1
   answerability:
     enabled: true
     onInsufficientEvidence: clarify

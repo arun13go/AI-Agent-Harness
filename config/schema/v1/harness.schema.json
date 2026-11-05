@@ -97,7 +97,42 @@
           "enum": ["none", "in-memory", "azure-ai-search"]
         },
         "strategy": {
-          "enum": ["none", "keyword", "vector", "hybrid"]
+          "enum": ["none", "keyword", "semantic", "vector", "hybrid"]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "minimumScore": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "maximumAttempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        },
+        "search": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["endpointEnv", "indexName"],
+          "properties": {
+            "endpointEnv": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "indexName": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,127}$"
+            },
+            "keywordScoreHalfPoint": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000000
+            }
+          }
         },
         "answerability": {
           "type": "object",
@@ -220,9 +255,65 @@
       "then": {
         "properties": {
           "retrieval": {
+            "required": ["search"],
             "properties": {
               "strategy": {
-                "enum": ["keyword", "vector", "hybrid"]
+                "enum": ["keyword", "semantic", "vector", "hybrid"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "adapter": {
+                "enum": ["none", "in-memory"]
+              }
+            },
+            "required": ["adapter"]
+          }
+        },
+        "required": ["retrieval"]
+      },
+      "then": {
+        "properties": {
+          "retrieval": {
+            "not": {
+              "required": ["search"]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "strategy": {
+                "const": "semantic"
+              }
+            },
+            "required": ["strategy"]
+          }
+        },
+        "required": ["retrieval"]
+      },
+      "then": {
+        "properties": {
+          "retrieval": {
+            "properties": {
+              "adapter": {
+                "const": "azure-ai-search"
+              },
+              "search": {
+                "not": {
+                  "required": ["keywordScoreHalfPoint"]
+                }
               }
             }
           }

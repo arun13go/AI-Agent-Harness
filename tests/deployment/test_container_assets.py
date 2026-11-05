@@ -78,6 +78,7 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
         "searchServiceSku",
         "searchResourceGroupName",
         "searchSemanticSearch",
+        "documentIntelligenceSku",
     }
 
     assert set(template["resources"]) == {
@@ -87,18 +88,43 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
         "search",
         "searchGroup",
         "searchInOwnGroup",
+        "documentIntelligence",
+        "documentIntelligenceInOwnGroup",
     }
     assert template["parameters"]["searchServiceSku"]["defaultValue"] == "none"
+    assert template["parameters"]["documentIntelligenceSku"]["defaultValue"] == "none"
+    assert template["parameters"]["documentIntelligenceSku"]["allowedValues"] == [
+        "none",
+        "F0",
+        "S0",
+    ]
     assert template["parameters"]["searchResourceGroupName"]["defaultValue"] == ""
     assert template["parameters"]["searchSemanticSearch"]["defaultValue"] == "disabled"
-    assert "createSearchGroup" in template["variables"]
-    assert template["resources"]["searchGroup"]["condition"] == "[variables('createSearchGroup')]"
+    assert "useOwnGroup" in template["variables"]
+    assert template["resources"]["searchGroup"]["condition"] == "[variables('useOwnGroup')]"
     assert template["resources"]["searchInOwnGroup"]["condition"] == (
-        "[variables('createSearchGroup')]"
+        "[and(not(equals(parameters('searchServiceSku'), 'none')), variables('useOwnGroup'))]"
     )
     assert template["resources"]["search"]["condition"] == (
-        "[and(not(equals(parameters('searchServiceSku'), 'none')), "
-        "not(variables('createSearchGroup')))]"
+        "[and(not(equals(parameters('searchServiceSku'), 'none')), not(variables('useOwnGroup')))]"
+    )
+    assert template["resources"]["documentIntelligence"]["condition"] == (
+        "[and(not(equals(parameters('documentIntelligenceSku'), 'none')), "
+        "not(variables('useOwnGroup')))]"
+    )
+    assert template["resources"]["documentIntelligenceInOwnGroup"]["condition"] == (
+        "[and(not(equals(parameters('documentIntelligenceSku'), 'none')), "
+        "variables('useOwnGroup'))]"
+    )
+    document_template = template["resources"]["documentIntelligence"]["properties"]["template"]
+    [document_account] = document_template["resources"]
+    assert document_account["type"] == "Microsoft.CognitiveServices/accounts"
+    assert document_account["kind"] == "FormRecognizer"
+    assert document_account["properties"]["disableLocalAuth"] is True
+    assert document_account["properties"]["customSubDomainName"] == "[parameters('name')]"
+    assert document_template["parameters"]["sku"]["allowedValues"] == ["F0", "S0"]
+    assert {"AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT", "AZURE_DOCUMENT_INTELLIGENCE_NAME"} <= set(
+        template["outputs"]
     )
     nested = template["resources"]["search"]["properties"]["template"]["resources"]
     [search] = [entry for entry in nested if entry["type"] == "Microsoft.Search/searchServices"]

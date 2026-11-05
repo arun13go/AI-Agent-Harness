@@ -51,6 +51,12 @@ class RetrievalError(HarnessError):
     code = "retrieval_error"
 
 
+class ExtractionError(HarnessError):
+    """A document could not be turned into text, or the extraction service failed."""
+
+    code = "extraction_error"
+
+
 class ContextBudgetError(ExecutionLimitError):
     """Mandatory context (instructions and the current request) cannot fit the budget."""
 

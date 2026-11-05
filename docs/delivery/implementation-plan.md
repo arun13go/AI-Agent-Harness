@@ -25,7 +25,7 @@ adapter expectations.
 | 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Complete |
-| 2 | Grounded-assistant profile | In progress (local path runnable; Azure AI Search and hosting open) |
+| 2 | Grounded-assistant profile | In progress (grounded path on Azure AI Search, ingestion of Markdown, PDF and Word done; hosting and close-out decisions open) |
 | 3 | Durable Azure adapters | Not started |
 | 4 | Evaluation and operations | Not started |
 | 5 | Deployment and CI hardening | Not started |
@@ -469,24 +469,28 @@ slices. Remaining, in order:
    for one tenant, adding changed chunks, removing stale ones, renewing freshness, refusing to
    overwrite another corpus and guarding large deletions, verified live. Scheduling a sync and
    removing a single document by name are not provided.
-4. **Word and PDF ingestion** (planned; extractors now feed the synchronization step above).
-   Today only Markdown is ingested. Each format becomes an *extractor* that turns the original file
-   into structured text, so the existing chunker, chunk identity ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md))
-   and scoping rules stay unchanged. Scope and order:
-   - **Word:** `.docx` first, extracted to Markdown (headings and tables map reliably). Legacy
-     binary `.doc` needs a conversion step; the ADR decides whether to support it or reject it with
-     a clear error.
-   - **PDF with a text layer:** extract text, infer headings, and handle tables conservatively.
-   - **Scanned PDFs and images:** OCR and layout analysis, most likely Azure AI Document
-     Intelligence, which may also make local PDF extraction a development convenience only.
-   - **Untrusted-input rules for every extractor:** hard limits on size, pages, archive expansion
-     and parse time, run in a bounded step that fails closed; macro-enabled and encrypted files
-     rejected; an explicit policy for hidden text, comments, tracked changes and metadata; all
-     extracted text labeled untrusted; `sourceVersion` stays a hash of the original bytes.
-   - **Deliverables:** an ADR, extractors behind a contract, fixtures per format (including
-     hostile files), and the shared chunker suite run over extractor output. Pin each new parsing
-     dependency, since these libraries parse attacker-controlled files.
-5. **Live validation** of the grounded path against a Foundry model (needs approval).
+4. **Word and PDF ingestion** (done for `.pdf` and `.docx`:
+   [ADR 0026](../decisions/0026-document-extraction-with-document-intelligence.md)). The files are
+   sent to Azure AI Document Intelligence, which parses them outside this process and returns
+   Markdown for the existing chunker, so chunk identity
+   ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md)), scoping and the untrusted-text
+   marking are unchanged and `sourceVersion` is a hash of the original bytes. Decisions recorded:
+   - **Parsing is delegated**, so no local parser was added (none could be installed here, and a
+     hand-written PDF parser is not safe to maintain). This also covers scanned PDFs in principle.
+   - **Legacy `.doc` is rejected** with an instruction to save as `.docx`, as an error rather than
+     a skip, so a sync can never delete evidence because a file was quietly ignored.
+   - **Hostile input:** local signature, size and emptiness checks before sending; a validated
+     endpoint and operation address; no redirects; bounded waiting and retries; code-only errors;
+     results must be non-empty Markdown; a document that yields no text is an error.
+   - **No repeat billing:** unchanged files are not extracted again and are refreshed in place.
+   - **Verified live** on a Free-tier resource with small generated files, including edit, removal,
+     failure paths and grounded answers from the PDF and a Word table. Extraction quality on real
+     multi-page, scanned or table-heavy documents is not yet measured (the free tier analyses
+     only two PDF pages), and images and other Office formats are not accepted.
+5. **Live validation** of the grounded path against a Foundry model is done for the Azure profile
+   ([ADR 0024](../decisions/0024-retrieval-settings-as-profile-configuration.md),
+   [ADR 0026](../decisions/0026-document-extraction-with-document-intelligence.md)); judging whether
+   answers are faithful to their evidence is Phase 4 work.
 6. **Episodic-memory policy**, listed in the Phase 2 deliverable, which has no design yet:
    schedule it or move it to Phase 3 explicitly.
 

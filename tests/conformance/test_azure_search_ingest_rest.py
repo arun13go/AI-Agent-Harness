@@ -168,3 +168,45 @@ async def test_failed_or_missing_deletion_results_are_rejected(reply: dict[str, 
 
     with pytest.raises(RetrievalError):
         await service.delete_documents(["a"])
+
+
+@pytest.mark.asyncio
+async def test_merging_batches_and_sends_merge_actions_with_only_the_named_fields() -> None:
+    calls: list[list[dict[str, Any]]] = []
+
+    def handler(request: urllib.request.Request) -> bytes:
+        batch = body_of(request)["value"]
+        calls.append(batch)
+        return json.dumps(
+            {"value": [{"key": entry["id"], "status": True} for entry in batch]}
+        ).encode()
+
+    service, _ = backend(handler)
+    documents = [{"id": f"k{n}", "freshUntil": "2026-12-01T00:00:00+00:00"} for n in range(501)]
+
+    assert await service.merge_documents(documents) == 501
+    assert [len(batch) for batch in calls] == [500, 1]
+    assert all(entry["@search.action"] == "merge" for batch in calls for entry in batch)
+    assert all(set(entry) == {"@search.action", "id", "freshUntil"} for b in calls for entry in b)
+
+
+@pytest.mark.asyncio
+async def test_merging_nothing_makes_no_request() -> None:
+    service, opener = backend(paged([]))
+
+    assert await service.merge_documents([]) == 0
+    assert opener.requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "reply",
+    [{"value": [{"key": "a", "status": False}]}, {"value": []}, {"value": [{"key": "a"}]}, {}],
+)
+async def test_a_merge_into_a_missing_document_or_a_bad_reply_is_rejected(
+    reply: dict[str, Any],
+) -> None:
+    service, _ = backend(lambda _: json.dumps(reply).encode())
+
+    with pytest.raises(RetrievalError, match=r"rejected|unexpected"):
+        await service.merge_documents([{"id": "a", "freshUntil": "x"}])

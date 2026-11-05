@@ -6,15 +6,13 @@ import urllib.request
 from collections.abc import Callable, Mapping
 from datetime import datetime
 
+from agent_harness.adapters.http_support import TokenCredential
 from agent_harness.adapters.retrieval.azure_search import (
     AzureSearchRetrievalProvider,
     linear_score,
     saturating_score,
 )
-from agent_harness.adapters.retrieval.azure_search_rest import (
-    AzureSearchRestBackend,
-    TokenCredential,
-)
+from agent_harness.adapters.retrieval.azure_search_rest import AzureSearchRestBackend
 from agent_harness.core.configuration import HarnessConfig
 from agent_harness.core.errors import ConfigurationError
 

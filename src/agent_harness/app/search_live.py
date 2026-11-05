@@ -14,16 +14,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 
+from agent_harness.adapters.http_support import TokenCredential
 from agent_harness.adapters.retrieval.azure_search import (
     AzureSearchRetrievalProvider,
     SearchBackend,
     evidence_to_document,
     saturating_score,
 )
-from agent_harness.adapters.retrieval.azure_search_rest import (
-    AzureSearchRestBackend,
-    TokenCredential,
-)
+from agent_harness.adapters.retrieval.azure_search_rest import AzureSearchRestBackend
 from agent_harness.core.errors import HarnessError
 from agent_harness.core.types import IdentityScope, RetrievedItem, SourceReference
 

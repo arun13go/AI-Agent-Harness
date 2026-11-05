@@ -12,9 +12,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+from agent_harness.adapters.extraction.factory import create_document_extractor
 from agent_harness.adapters.foundry.model_client import create_foundry_chat_client
 from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
 from agent_harness.adapters.retrieval.azure_search_factory import create_azure_search_provider
+from agent_harness.adapters.retrieval.document_corpus import (
+    list_document_files,
+    load_document_corpus,
+)
 from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
 from agent_harness.adapters.retrieval.lexical import IdfCoverageScorer
 from agent_harness.adapters.retrieval.markdown_corpus import load_markdown_corpus
@@ -36,7 +41,7 @@ from agent_harness.app.grounded_executor import (
 )
 from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.app.retrieval_eval import evaluate_retrieval
-from agent_harness.app.search_ingest import sync_corpus
+from agent_harness.app.search_ingest import Refresh, known_source_versions, sync_corpus
 from agent_harness.app.search_live import build_backend, check_isolation
 from agent_harness.core.configuration import HarnessConfig, ProfileName, load_harness_config
 from agent_harness.core.contracts import RetrievalProvider, Tool
@@ -224,6 +229,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--allow-large-delete",
         action="store_true",
         help="Allow a sync that removes more than half of an existing corpus",
+    )
+    search_parser.add_argument(
+        "--extract-documents",
+        action="store_true",
+        help="Also index PDF and Word files, extracted by Azure AI Document Intelligence "
+        "(AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT). Billed per page; unchanged files are not "
+        "extracted again, but a dry run still extracts new and changed ones",
     )
     return parser
 
@@ -467,12 +479,34 @@ async def _run_search_index(args: argparse.Namespace) -> dict[str, object]:
     if args.action == "sync":
         if args.corpus is None or args.tenant is None or args.corpus_id is None:
             raise ConfigurationError("--corpus, --tenant and --corpus-id are required for sync")
+        return await _run_sync(args)
+    backend = build_backend(endpoint=args.endpoint, index_name=args.index)
+    if args.action == "isolation":
+        return await check_isolation(backend)
+    await backend.delete_index()
+    return {"action": "delete", "index": args.index}
+
+
+async def _run_sync(args: argparse.Namespace) -> dict[str, object]:
+    """Synchronize a folder into a corpus, extracting PDF and Word files only when asked."""
+
+    now = datetime.now(UTC)
+    fresh_for = timedelta(days=args.fresh_days)
+    if not args.extract_documents:
+        # Without extraction these files would be skipped, and a sync would then remove the
+        # chunks of any that were indexed before. Refuse instead of letting that happen quietly.
+        documents = list_document_files(args.corpus)
+        if documents:
+            raise ConfigurationError(
+                f"The folder contains {len(documents)} PDF or Word file(s); pass "
+                "--extract-documents to index them, or move them out of the folder"
+            )
         items = load_markdown_corpus(
             args.corpus,
             tenant_scope=args.tenant,
             authorization_labels=args.corpus_label,
-            ingested_at=datetime.now(UTC),
-            fresh_for=timedelta(days=args.fresh_days),
+            ingested_at=now,
+            fresh_for=fresh_for,
         )
         return await sync_corpus(
             build_backend(endpoint=args.endpoint, index_name=args.index),
@@ -483,10 +517,32 @@ async def _run_search_index(args: argparse.Namespace) -> dict[str, object]:
             allow_large_delete=args.allow_large_delete,
         )
     backend = build_backend(endpoint=args.endpoint, index_name=args.index)
-    if args.action == "isolation":
-        return await check_isolation(backend)
-    await backend.delete_index()
-    return {"action": "delete", "index": args.index}
+    extractor = create_document_extractor(os.environ)
+    known = await known_source_versions(backend, tenant_scope=args.tenant, corpus_id=args.corpus_id)
+    loaded = await load_document_corpus(
+        args.corpus,
+        extractor=extractor,
+        tenant_scope=args.tenant,
+        authorization_labels=args.corpus_label,
+        ingested_at=now,
+        fresh_for=fresh_for,
+        known_versions=known,
+    )
+    report = await sync_corpus(
+        backend,
+        items=loaded.items,
+        tenant_scope=args.tenant,
+        corpus_id=args.corpus_id,
+        dry_run=args.dry_run,
+        allow_large_delete=args.allow_large_delete,
+        unchanged_sources=loaded.unchanged_sources,
+        refresh=Refresh(now, now + fresh_for, tuple(args.corpus_label)),
+    )
+    return {
+        **report,
+        "extractedFiles": loaded.extracted_files,
+        "extractedPages": loaded.extracted_pages,
+    }
 
 
 async def _run_action_demo(args: argparse.Namespace) -> dict[str, object]:

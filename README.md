@@ -224,6 +224,16 @@ Preview with `--dry-run`, and add `--corpus-label` to restrict readers
 ([ADR 0025](docs/decisions/0025-corpus-synchronization.md)). Other actions are `isolation`, which
 checks tenant and label separation with canary documents, and `delete`, which drops an index.
 
+PDF and Word (`.docx`) files are indexed with `--extract-documents`. They are sent to an Azure AI
+Document Intelligence resource, which returns Markdown for the same chunker and scoping rules
+([ADR 0026](docs/decisions/0026-document-extraction-with-document-intelligence.md)). The resource
+is optional (`documentIntelligenceSku` in [`infra/main.bicep`](infra/main.bicep), `F0` or `S0`,
+Entra only), and its endpoint comes from `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT`. Extraction is
+billed per page, so unchanged files are not extracted again and the report shows `extractedPages`.
+Legacy `.doc` files are rejected, and a folder with PDF or Word files is refused without the flag
+instead of silently skipping them. The free tier analyses only the first two pages of a PDF, so use
+a paid tier for real documents, and note that content is sent to the resource you choose.
+
 `--search-index` scores a different index, and `--minimum-score` overrides the profile.
 `grounded-run` needs the Foundry model variables as well. Do not pass `--corpus` with the Azure
 profile, since the index is external.

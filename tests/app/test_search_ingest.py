@@ -25,7 +25,7 @@ from agent_harness.adapters.retrieval.markdown_corpus import load_markdown_corpu
 from agent_harness.app import cli
 from agent_harness.app.cli import main
 from agent_harness.app.search_ingest import sync_corpus
-from agent_harness.core.errors import InputValidationError
+from agent_harness.core.errors import InputValidationError, RetrievalError
 from agent_harness.core.types import RetrievedItem
 from tests.conformance.fixtures import TENANT_A, TENANT_B, make_evidence
 
@@ -64,6 +64,16 @@ class FakeIndex:
         for document_id in document_ids:
             self.documents.pop(document_id, None)
         return len(document_ids)
+
+    async def merge_documents(self, documents: Sequence[Mapping[str, Any]]) -> int:
+        self.operations.append("merge")
+        if self.fail_on == "merge":
+            raise RuntimeError("merge failed")
+        for document in documents:
+            if str(document["id"]) not in self.documents:
+                raise RetrievalError("Search backend rejected one or more updates")
+            self.documents[str(document["id"])].update(document)
+        return len(documents)
 
     async def list_documents(
         self, *, odata_filter: str, select: Sequence[str]
@@ -122,6 +132,7 @@ async def test_first_sync_writes_every_chunk_with_its_scope(tmp_path: Path) -> N
         "desired": len(items),
         "added": len(items),
         "refreshed": 0,
+        "merged": 0,
         "removed": 0,
     }
     assert set(index.documents) == {item.item_id for item in items}
@@ -426,7 +437,7 @@ async def test_a_report_contains_counts_only(tmp_path: Path) -> None:
 
     report = await sync(index, chunks(write_corpus(tmp_path / "c", FILES)))
 
-    assert set(report) == {"action", "dryRun", "desired", "added", "refreshed", "removed"}
+    assert set(report) == {"action", "dryRun", "desired", "added", "refreshed", "merged", "removed"}
     assert all(isinstance(value, int | bool | str) for value in report.values())
 
 

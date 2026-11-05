@@ -14,17 +14,20 @@ large deletion unless asked. Reports carry counts only, never source names or co
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from agent_harness.adapters.retrieval.azure_search import (
     CORPUS_FIELD,
+    LABELS_FIELD,
     build_corpus_filter,
     build_id_filter,
     evidence_to_document,
     validate_corpus_id,
 )
 from agent_harness.core.errors import InputValidationError
-from agent_harness.core.governance import validate_tenant_scope
+from agent_harness.core.governance import validate_authorization_labels, validate_tenant_scope
 from agent_harness.core.types import RetrievedItem
 
 # Chunk identifiers are about 36 characters; this keeps one collision query well under URL and
@@ -42,9 +45,40 @@ class IngestBackend(Protocol):
 
     async def delete_documents(self, document_ids: Sequence[str]) -> int: ...
 
+    async def merge_documents(self, documents: Sequence[Mapping[str, Any]]) -> int: ...
+
     async def list_documents(
         self, *, odata_filter: str, select: Sequence[str]
     ) -> list[dict[str, Any]]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class Refresh:
+    """The freshness window and labels to apply to chunks kept without re-extraction."""
+
+    ingested_at: datetime
+    fresh_until: datetime
+    authorization_labels: tuple[str, ...]
+
+
+async def known_source_versions(
+    backend: IngestBackend, *, tenant_scope: str, corpus_id: str
+) -> dict[str, str]:
+    """Return the version the index holds for each source of a corpus.
+
+    A source whose chunks disagree on version is left out, so it is simply extracted again.
+    """
+
+    owned = await backend.list_documents(
+        odata_filter=build_corpus_filter(tenant_scope, corpus_id),
+        select=["id", "sourceId", "sourceVersion"],
+    )
+    versions: dict[str, set[str]] = {}
+    for document in owned:
+        source, version = document.get("sourceId"), document.get("sourceVersion")
+        if isinstance(source, str) and isinstance(version, str):
+            versions.setdefault(source, set()).add(version)
+    return {source: next(iter(found)) for source, found in versions.items() if len(found) == 1}
 
 
 async def sync_corpus(
@@ -56,26 +90,39 @@ async def sync_corpus(
     dry_run: bool = False,
     allow_large_delete: bool = False,
     allow_empty: bool = False,
+    unchanged_sources: Mapping[str, str] | None = None,
+    refresh: Refresh | None = None,
 ) -> dict[str, object]:
-    """Make the corpus hold exactly ``items``, and report what changed as counts."""
+    """Make the corpus hold exactly ``items`` plus the unchanged sources, and report counts.
+
+    ``unchanged_sources`` names sources (with their versions) that were deliberately not
+    re-extracted. Their chunks stay, with freshness and labels refreshed in place. If the index no
+    longer holds a named source at that version, the sync stops instead of deleting its evidence.
+    """
 
     validate_tenant_scope(tenant_scope)
     validate_corpus_id(corpus_id)
+    unchanged = dict(unchanged_sources or {})
+    if unchanged and refresh is None:
+        raise InputValidationError("Unchanged sources need a refresh window")
     desired = _index_by_id(items, tenant_scope)
     if not dry_run:
         await backend.create_index()
     owned = await backend.list_documents(
-        odata_filter=build_corpus_filter(tenant_scope, corpus_id), select=["id"]
+        odata_filter=build_corpus_filter(tenant_scope, corpus_id),
+        select=["id", "sourceId", "sourceVersion"],
     )
     existing = {str(document["id"]) for document in owned}
+    kept = _kept_ids(owned, unchanged)
     await _refuse_foreign_collisions(backend, set(desired), corpus_id)
 
+    wanted = set(desired) | kept
     added = sorted(set(desired) - existing)
-    removed = sorted(existing - set(desired))
+    removed = sorted(existing - wanted)
     _refuse_unsafe_deletion(
         existing=len(existing),
         removed=len(removed),
-        desired=len(desired),
+        desired=len(wanted),
         allow_large_delete=allow_large_delete,
         allow_empty=allow_empty,
     )
@@ -84,16 +131,48 @@ async def sync_corpus(
         await backend.upload(
             [evidence_to_document(item, corpus_id=corpus_id) for item in desired.values()]
         )
+        if kept and refresh is not None:
+            await backend.merge_documents(_refresh_documents(sorted(kept), refresh))
         if removed:
             await backend.delete_documents(removed)
     return {
         "action": "sync",
         "dryRun": dry_run,
-        "desired": len(desired),
+        "desired": len(wanted),
         "added": len(added),
-        "refreshed": len(desired) - len(added),
+        "refreshed": len(wanted) - len(added),
+        "merged": len(kept),
         "removed": len(removed),
     }
+
+
+def _kept_ids(owned: Sequence[Mapping[str, Any]], unchanged: Mapping[str, str]) -> set[str]:
+    kept = {
+        str(document["id"])
+        for document in owned
+        if unchanged.get(str(document.get("sourceId"))) == document.get("sourceVersion")
+    }
+    held = {str(document.get("sourceId")) for document in owned if str(document["id"]) in kept}
+    missing = set(unchanged) - held
+    if missing:
+        raise InputValidationError(
+            "The index no longer holds an unchanged source at its recorded version; "
+            "rerun the sync so it is extracted again"
+        )
+    return kept
+
+
+def _refresh_documents(ids: Sequence[str], refresh: Refresh) -> list[dict[str, Any]]:
+    labels = list(validate_authorization_labels(refresh.authorization_labels))
+    return [
+        {
+            "id": document_id,
+            "ingestedAt": refresh.ingested_at.astimezone(UTC).isoformat(),
+            "freshUntil": refresh.fresh_until.astimezone(UTC).isoformat(),
+            LABELS_FIELD: labels,
+        }
+        for document_id in ids
+    ]
 
 
 def _index_by_id(items: Sequence[RetrievedItem], tenant_scope: str) -> dict[str, RetrievedItem]:

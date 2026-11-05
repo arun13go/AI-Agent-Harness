@@ -10,14 +10,14 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import threading
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Protocol, cast
+from typing import Any, cast
 from urllib.parse import quote, urlsplit
 
+from agent_harness.adapters.http_support import BearerTokenCache, NoRedirect, TokenCredential
 from agent_harness.adapters.retrieval.azure_search import INDEX_FIELDS, SCORE_KEY
 from agent_harness.core.errors import InputValidationError, RetrievalError
 
@@ -33,27 +33,7 @@ _MAX_UPLOAD_BATCH = 500
 _LIST_PAGE_SIZE = 1000
 _MAX_LISTED_DOCUMENTS = 100_000
 _FIELD_NAMES = frozenset(field["name"] for field in INDEX_FIELDS)
-_TOKEN_REFRESH_SKEW_SECONDS = 300
 _SELECT = ",".join(field["name"] for field in INDEX_FIELDS)
-
-
-class AccessToken(Protocol):
-    @property
-    def token(self) -> str: ...
-
-    @property
-    def expires_on(self) -> int: ...
-
-
-class TokenCredential(Protocol):
-    """A synchronous Entra credential, such as ``DefaultAzureCredential``."""
-
-    def get_token(self, *scopes: str) -> AccessToken: ...
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
-        return None
 
 
 def validate_endpoint(endpoint: str) -> str:
@@ -132,26 +112,13 @@ class AzureSearchRestBackend:
             raise InputValidationError("Search timeout must be between 0 and 120 seconds")
         self._endpoint = validate_endpoint(endpoint)
         self._index = _index_name(index_name)
-        self._credential = credential
         self._timeout = timeout_seconds
-        self._opener = opener or urllib.request.build_opener(_NoRedirect)
-        self._clock = clock
+        self._opener = opener or urllib.request.build_opener(NoRedirect)
+        self._tokens = BearerTokenCache(credential, TOKEN_SCOPE, clock=clock)
         self._semantic = semantic
-        self._token_lock = threading.Lock()
-        self._cached_token: AccessToken | None = None
 
     def _bearer_token(self) -> str:
-        """Reuse the credential's token until shortly before it expires.
-
-        Some credentials, such as the Azure CLI one, start a process for every call.
-        """
-
-        with self._token_lock:
-            token = self._cached_token
-            if token is None or token.expires_on - self._clock() < _TOKEN_REFRESH_SKEW_SECONDS:
-                token = self._credential.get_token(TOKEN_SCOPE)
-                self._cached_token = token
-            return token.token
+        return self._tokens.token()
 
     async def search(
         self, *, text: str, odata_filter: str, top: int
@@ -183,6 +150,28 @@ class AzureSearchRestBackend:
         """Delete the index; used to clean up experiments."""
 
         await self._call("DELETE", f"/indexes/{self._index}", None)
+
+    async def merge_documents(self, documents: Sequence[Mapping[str, Any]]) -> int:
+        """Update only the named fields of existing documents, in bounded batches.
+
+        Every document must exist: a merge into a missing key is reported as a failure, never
+        created, so a refresh can not resurrect evidence that was removed in the meantime.
+        """
+
+        merged = 0
+        for start in range(0, len(documents), _MAX_UPLOAD_BATCH):
+            batch = [
+                {"@search.action": "merge", **document}
+                for document in documents[start : start + _MAX_UPLOAD_BATCH]
+            ]
+            payload = await self._call(
+                "POST", f"/indexes/{self._index}/docs/index", {"value": batch}
+            )
+            results = _objects(payload.get("value"), "merge result")
+            if len(results) != len(batch) or not all(r.get("status") is True for r in results):
+                raise RetrievalError("Search backend rejected one or more updates")
+            merged += len(batch)
+        return merged
 
     async def delete_documents(self, document_ids: Sequence[str]) -> int:
         """Delete documents by key in bounded batches and require every request to succeed."""

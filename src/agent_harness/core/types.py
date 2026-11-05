@@ -134,6 +134,14 @@ class SourceReference:
 
 
 @dataclass(frozen=True, slots=True)
+class ExtractedDocument:
+    """Structured text recovered from a document, as untrusted Markdown."""
+
+    markdown: str
+    page_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class RetrievedItem:
     item_id: str
     content: str

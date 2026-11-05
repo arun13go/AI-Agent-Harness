@@ -41,7 +41,7 @@ def load_markdown_corpus(
     if fresh_for <= timedelta(0):
         raise InputValidationError("Corpus freshness window must be positive")
     base = root.resolve(strict=True)
-    selected = _list_files(base)
+    selected = list_corpus_files(base)
     if not selected:
         raise InputValidationError("Corpus contains no Markdown files")
 
@@ -83,7 +83,12 @@ def load_markdown_corpus(
     return tuple(items)
 
 
-def _list_files(base: Path) -> list[tuple[str, Path]]:
+def list_corpus_files(base: Path, extensions: tuple[str, ...] = (".md",)) -> list[tuple[str, Path]]:
+    """List regular files with the given extensions in a stable order, refusing links.
+
+    Hidden files and directories are skipped, symbolic links raise, and the file count is bounded.
+    """
+
     found: list[tuple[str, Path]] = []
     for directory, subdirectories, filenames in os.walk(base, followlinks=False):
         parent = Path(directory)
@@ -94,7 +99,7 @@ def _list_files(base: Path) -> list[tuple[str, Path]]:
                 raise InputValidationError(f"Corpus contains a symbolic link: '{relative}'")
         subdirectories[:] = sorted(name for name in subdirectories if not name.startswith("."))
         for name in sorted(filenames):
-            if name.startswith(".") or not name.lower().endswith(".md"):
+            if name.startswith(".") or not name.lower().endswith(extensions):
                 continue
             path = parent / name
             relative = path.relative_to(base).as_posix()

@@ -39,7 +39,7 @@ param registrationConfig RegistrationConfig?
 ])
 param searchServiceSku string = 'none'
 
-@description('Resource group for the search service. Empty reuses resourceGroupName; any other name is created by this template so the experiment can be removed by deleting that group.')
+@description('Resource group for the optional resources (search and document extraction). Empty reuses resourceGroupName; any other name is created by this template so an experiment can be removed by deleting that group.')
 param searchResourceGroupName string = ''
 
 @description('Semantic ranker plan for the search service.')
@@ -49,7 +49,15 @@ param searchResourceGroupName string = ''
 ])
 param searchSemanticSearch string = 'disabled'
 
-var createSearchGroup = searchServiceSku != 'none' && !empty(searchResourceGroupName) && searchResourceGroupName != resourceGroupName
+@description('Opt-in Azure AI Document Intelligence resource that extracts PDF and Word files for ingestion. "none" creates nothing; F0 is free for development, S0 is billed per page.')
+@allowed([
+  'none'
+  'F0'
+  'S0'
+])
+param documentIntelligenceSku string = 'none'
+
+var useOwnGroup = (searchServiceSku != 'none' || documentIntelligenceSku != 'none') && !empty(searchResourceGroupName) && searchResourceGroupName != resourceGroupName
 var searchTags = {
   'azd-env-name': environmentName
   'azd-service-name': 'harness'
@@ -59,13 +67,13 @@ resource existingGroup 'Microsoft.Resources/resourceGroups@2025-04-01' existing 
   name: resourceGroupName
 }
 
-resource searchGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = if (createSearchGroup) {
+resource searchGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = if (useOwnGroup) {
   name: searchResourceGroupName
   location: location
   tags: searchTags
 }
 
-module search './search.bicep' = if (searchServiceSku != 'none' && !createSearchGroup) {
+module search './search.bicep' = if (searchServiceSku != 'none' && !useOwnGroup) {
   scope: existingGroup
   params: {
     name: 'srch-harness-${uniqueString(subscription().id, resourceGroupName)}'
@@ -76,7 +84,7 @@ module search './search.bicep' = if (searchServiceSku != 'none' && !createSearch
   }
 }
 
-module searchInOwnGroup './search.bicep' = if (createSearchGroup) {
+module searchInOwnGroup './search.bicep' = if (searchServiceSku != 'none' && useOwnGroup) {
   scope: searchGroup
   params: {
     name: 'srch-harness-${uniqueString(subscription().id, searchResourceGroupName)}'
@@ -84,6 +92,26 @@ module searchInOwnGroup './search.bicep' = if (createSearchGroup) {
     tags: searchTags
     sku: searchServiceSku == 'basic' ? 'basic' : 'free'
     semanticSearch: searchSemanticSearch
+  }
+}
+
+module documentIntelligence './document-intelligence.bicep' = if (documentIntelligenceSku != 'none' && !useOwnGroup) {
+  scope: existingGroup
+  params: {
+    name: 'di-harness-${uniqueString(subscription().id, resourceGroupName)}'
+    location: location
+    tags: searchTags
+    sku: documentIntelligenceSku == 'S0' ? 'S0' : 'F0'
+  }
+}
+
+module documentIntelligenceInOwnGroup './document-intelligence.bicep' = if (documentIntelligenceSku != 'none' && useOwnGroup) {
+  scope: searchGroup
+  params: {
+    name: 'di-harness-${uniqueString(subscription().id, searchResourceGroupName)}'
+    location: location
+    tags: searchTags
+    sku: documentIntelligenceSku == 'S0' ? 'S0' : 'F0'
   }
 }
 
@@ -130,5 +158,7 @@ output AZURE_AI_PROJECT_ENDPOINT string = registry.outputs.projectEndpoint
 output FOUNDRY_PROJECT_ENDPOINT string = registry.outputs.projectEndpoint
 output AZURE_AI_MODEL_DEPLOYMENT_NAME string = modelDeploymentName
 output HARNESS_REGISTRATION_RECEIPT object = registrationConfig != null ? registration!.outputs.receipt : {}
-output AZURE_SEARCH_ENDPOINT string = createSearchGroup ? searchInOwnGroup!.outputs.endpoint : (searchServiceSku != 'none' ? search!.outputs.endpoint : '')
-output AZURE_SEARCH_SERVICE_NAME string = createSearchGroup ? searchInOwnGroup!.outputs.name : (searchServiceSku != 'none' ? search!.outputs.name : '')
+output AZURE_SEARCH_ENDPOINT string = (searchServiceSku != 'none' && useOwnGroup) ? searchInOwnGroup!.outputs.endpoint : (searchServiceSku != 'none' ? search!.outputs.endpoint : '')
+output AZURE_SEARCH_SERVICE_NAME string = (searchServiceSku != 'none' && useOwnGroup) ? searchInOwnGroup!.outputs.name : (searchServiceSku != 'none' ? search!.outputs.name : '')
+output AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT string = (documentIntelligenceSku != 'none' && useOwnGroup) ? documentIntelligenceInOwnGroup!.outputs.endpoint : (documentIntelligenceSku != 'none' ? documentIntelligence!.outputs.endpoint : '')
+output AZURE_DOCUMENT_INTELLIGENCE_NAME string = (documentIntelligenceSku != 'none' && useOwnGroup) ? documentIntelligenceInOwnGroup!.outputs.name : (documentIntelligenceSku != 'none' ? documentIntelligence!.outputs.name : '')

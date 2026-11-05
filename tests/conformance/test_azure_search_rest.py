@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 
+from agent_harness.adapters.http_support import NoRedirect
 from agent_harness.adapters.retrieval.azure_search import (
     CORPUS_FIELD,
     INDEX_FIELDS,
@@ -31,7 +32,6 @@ from agent_harness.adapters.retrieval.azure_search_rest import (
     SEMANTIC_CONFIGURATION,
     TOKEN_SCOPE,
     AzureSearchRestBackend,
-    _NoRedirect,  # pyright: ignore[reportPrivateUsage]
     index_definition,
     validate_endpoint,
 )
@@ -315,7 +315,7 @@ async def test_oversized_responses_are_rejected_without_reading_them_all() -> No
 
 
 def test_redirects_are_never_followed() -> None:
-    handler = _NoRedirect()
+    handler = NoRedirect()
     request = urllib.request.Request(ENDPOINT)
 
     assert handler.redirect_request(request, None, 302, "Found", {}, "https://evil.example") is None

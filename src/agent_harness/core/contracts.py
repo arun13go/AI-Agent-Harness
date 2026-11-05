@@ -14,6 +14,7 @@ from agent_harness.core.types import (
     ArtifactRecord,
     Checkpoint,
     ContextPlan,
+    ExtractedDocument,
     IdempotencyRecord,
     IdentityScope,
     MemoryRecord,
@@ -74,6 +75,16 @@ class Chunker(Protocol):
         tenant_scope: str,
         authorization_labels: Sequence[str],
     ) -> Sequence[RetrievedItem]: ...
+
+
+class DocumentExtractor(Protocol):
+    """Turn the bytes of one document into untrusted Markdown, preserving headings and tables.
+
+    The input is attacker-controlled. Implementations must bound size and time, fail closed with
+    ``ExtractionError`` or ``InputValidationError``, and never return text as instructions.
+    """
+
+    async def extract(self, *, content: bytes, filename: str) -> ExtractedDocument: ...
 
 
 class TokenEstimator(Protocol):

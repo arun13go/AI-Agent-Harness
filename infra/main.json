@@ -6,7 +6,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.40.2.10011",
-      "templateHash": "14195172540722050592"
+      "templateHash": "12589968440627197009"
     }
   },
   "definitions": {
@@ -93,6 +93,17 @@
       "metadata": {
         "description": "Resource group for the search service. Empty reuses resourceGroupName; any other name is created by this template so the experiment can be removed by deleting that group."
       }
+    },
+    "searchSemanticSearch": {
+      "type": "string",
+      "defaultValue": "disabled",
+      "allowedValues": [
+        "disabled",
+        "free"
+      ],
+      "metadata": {
+        "description": "Semantic ranker plan for the search service."
+      }
     }
   },
   "variables": {
@@ -138,7 +149,10 @@
           "tags": {
             "value": "[variables('searchTags')]"
           },
-          "sku": "[if(equals(parameters('searchServiceSku'), 'basic'), createObject('value', 'basic'), createObject('value', 'free'))]"
+          "sku": "[if(equals(parameters('searchServiceSku'), 'basic'), createObject('value', 'basic'), createObject('value', 'free'))]",
+          "semanticSearch": {
+            "value": "[parameters('searchSemanticSearch')]"
+          }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -147,7 +161,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "12935550758896321429"
+              "templateHash": "10013162914738428304"
             }
           },
           "parameters": {
@@ -183,6 +197,17 @@
               "metadata": {
                 "description": "Search SKU. Free is for development only: one per subscription, 50 MB, no SLA."
               }
+            },
+            "semanticSearch": {
+              "type": "string",
+              "defaultValue": "disabled",
+              "allowedValues": [
+                "disabled",
+                "free"
+              ],
+              "metadata": {
+                "description": "Semantic ranker plan. \"free\" allows about 1,000 semantic queries a month at no cost; \"disabled\" turns it off."
+              }
             }
           },
           "resources": [
@@ -201,7 +226,7 @@
                 "hostingMode": "Default",
                 "publicNetworkAccess": "enabled",
                 "disableLocalAuth": true,
-                "semanticSearch": "disabled"
+                "semanticSearch": "[parameters('semanticSearch')]"
               }
             }
           ],
@@ -243,7 +268,10 @@
           "tags": {
             "value": "[variables('searchTags')]"
           },
-          "sku": "[if(equals(parameters('searchServiceSku'), 'basic'), createObject('value', 'basic'), createObject('value', 'free'))]"
+          "sku": "[if(equals(parameters('searchServiceSku'), 'basic'), createObject('value', 'basic'), createObject('value', 'free'))]",
+          "semanticSearch": {
+            "value": "[parameters('searchSemanticSearch')]"
+          }
         },
         "template": {
           "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
@@ -252,7 +280,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.40.2.10011",
-              "templateHash": "12935550758896321429"
+              "templateHash": "10013162914738428304"
             }
           },
           "parameters": {
@@ -288,6 +316,17 @@
               "metadata": {
                 "description": "Search SKU. Free is for development only: one per subscription, 50 MB, no SLA."
               }
+            },
+            "semanticSearch": {
+              "type": "string",
+              "defaultValue": "disabled",
+              "allowedValues": [
+                "disabled",
+                "free"
+              ],
+              "metadata": {
+                "description": "Semantic ranker plan. \"free\" allows about 1,000 semantic queries a month at no cost; \"disabled\" turns it off."
+              }
             }
           },
           "resources": [
@@ -306,7 +345,7 @@
                 "hostingMode": "Default",
                 "publicNetworkAccess": "enabled",
                 "disableLocalAuth": true,
-                "semanticSearch": "disabled"
+                "semanticSearch": "[parameters('semanticSearch')]"
               }
             }
           ],

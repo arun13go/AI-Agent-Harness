@@ -198,10 +198,13 @@ fails. The false-answer guard is fixed at zero.
 
 An optional Azure AI Search service (Free tier works for evaluation) can be created with
 `searchServiceSku` in [`infra/main.bicep`](infra/main.bicep). It is off by default, uses Entra roles
-only, and is not yet usable for answering because keyword scores cannot abstain
+only, and is not yet usable for answering because keyword scores cannot abstain; the free semantic
+ranker's scores can, pending configuration wiring
 ([ADR 0023](docs/decisions/0023-azure-ai-search-retrieval-adapter.md)). With roles granted to you,
 `agent-harness search-index --action load|isolation|delete` operates an index, and
-`eval-retrieval --search-endpoint <url> --search-index <name> --report-only` scores it.
+`eval-retrieval --search-endpoint <url> --search-index <name> --report-only` scores it, and adding
+`--search-semantic` (needs `searchSemanticSearch: free`) scores the semantic ranker's 0 to 4 reranker
+score instead of keyword scores.
 
 Examples live under [`config/profiles/`](config/profiles/).
 

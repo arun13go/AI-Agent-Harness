@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import email.message
 import io
 import json
@@ -20,10 +21,13 @@ from agent_harness.adapters.retrieval.azure_search import (
     TENANT_FIELD,
     AzureSearchRetrievalProvider,
     evidence_to_document,
+    linear_score,
     saturating_score,
 )
 from agent_harness.adapters.retrieval.azure_search_rest import (
     API_VERSION,
+    RERANKER_KEY,
+    SEMANTIC_CONFIGURATION,
     TOKEN_SCOPE,
     AzureSearchRestBackend,
     _NoRedirect,  # pyright: ignore[reportPrivateUsage]
@@ -381,3 +385,86 @@ def test_upload_and_search_use_documents_the_provider_reads() -> None:
     document = evidence_to_document(make_evidence("chunk-a"))
 
     assert set(document) == {field["name"] for field in INDEX_FIELDS}
+
+
+def test_index_definition_declares_the_semantic_configuration_over_content_only() -> None:
+    [configuration] = index_definition("harness-chunks")["semantic"]["configurations"]
+
+    assert configuration["name"] == SEMANTIC_CONFIGURATION
+    assert configuration["prioritizedFields"] == {
+        "prioritizedContentFields": [{"fieldName": "content"}]
+    }
+
+
+def semantic_backend(
+    hits: list[dict[str, Any]],
+) -> tuple[AzureSearchRestBackend, FakeOpener]:
+    opener = FakeOpener(lambda _: json.dumps({"value": hits}).encode())
+    return (
+        AzureSearchRestBackend(
+            endpoint=ENDPOINT,
+            index_name="harness-chunks",
+            credential=Credential(),
+            opener=opener,  # pyright: ignore[reportArgumentType]
+            semantic=True,
+        ),
+        opener,
+    )
+
+
+@pytest.mark.asyncio
+async def test_semantic_mode_asks_for_reranking_and_reports_the_reranker_score() -> None:
+    stored = evidence_to_document(make_evidence("chunk-a"))
+    service, opener = semantic_backend(
+        [
+            {**stored, SCORE_KEY: 9.0, RERANKER_KEY: 3.25},
+            {**stored, "id": "chunk-b", SCORE_KEY: 7.0, RERANKER_KEY: None},
+            {**stored, "id": "chunk-c", SCORE_KEY: 5.0},
+        ]
+    )
+
+    hits = await service.search(text="restart", odata_filter="f", top=10)
+
+    sent = body_of(opener.requests[0])
+    assert sent["queryType"] == "semantic"
+    assert sent["semanticConfiguration"] == SEMANTIC_CONFIGURATION
+    assert [hit[SCORE_KEY] for hit in hits] == [3.25, 0.0, 0.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reranker", [-0.5, 4.5, "3", True, float("nan")])
+async def test_semantic_mode_rejects_invalid_reranker_scores(reranker: Any) -> None:
+    stored = evidence_to_document(make_evidence("chunk-a"))
+    service, _ = semantic_backend([{**stored, SCORE_KEY: 1.0, RERANKER_KEY: reranker}])
+
+    with pytest.raises(RetrievalError):
+        await service.search(text="restart", odata_filter="f", top=10)
+
+
+@pytest.mark.asyncio
+async def test_unranked_results_are_dropped_by_the_provider() -> None:
+    stored = evidence_to_document(make_evidence("chunk-a", content="Restart the service."))
+    service, _ = semantic_backend(
+        [
+            {**stored, SCORE_KEY: 9.0, RERANKER_KEY: 2.0},
+            {**stored, "id": "chunk-b", SCORE_KEY: 8.0},
+        ]
+    )
+    provider = AzureSearchRetrievalProvider(
+        service, score_mapper=linear_score(4.0), clock=lambda: NOW
+    )
+
+    found = await provider.retrieve(
+        identity=IDENTITY_A, authorization_labels=LABELS, query="restart", limit=5
+    )
+
+    assert [(entry.item_id, entry.score) for entry in found] == [("chunk-a", 0.5)]
+
+
+def test_keyword_mode_is_the_default() -> None:
+    service, opener = backend(lambda _: b'{"value": []}')
+
+    asyncio.run(service.search(text="x", odata_filter="f", top=1))
+
+    assert body_of(opener.requests[0])["queryType"] == "simple"
+    assert "semanticConfiguration" not in body_of(opener.requests[0])

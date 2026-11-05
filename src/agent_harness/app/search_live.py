@@ -107,7 +107,11 @@ class IndexBackend(SearchBackend, Protocol):
 
 
 def build_backend(
-    *, endpoint: str, index_name: str, credential: TokenCredential | None = None
+    *,
+    endpoint: str,
+    index_name: str,
+    credential: TokenCredential | None = None,
+    semantic: bool = False,
 ) -> AzureSearchRestBackend:
     """Create a REST backend that authenticates with the developer's Entra identity."""
 
@@ -117,7 +121,9 @@ def build_backend(
         chosen: TokenCredential = DefaultAzureCredential()
     else:
         chosen = credential
-    return AzureSearchRestBackend(endpoint=endpoint, index_name=index_name, credential=chosen)
+    return AzureSearchRestBackend(
+        endpoint=endpoint, index_name=index_name, credential=chosen, semantic=semantic
+    )
 
 
 async def load_corpus(backend: AzureSearchRestBackend, dataset_dir: Path) -> dict[str, object]:

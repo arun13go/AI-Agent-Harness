@@ -413,8 +413,10 @@ requires an explicit mapping of service scores into [0, 1]. A REST backend, an i
 and `search-index` commands load the corpus and run a tenant and label isolation check. The live
 run found that the service cannot express the label rule as one filter, which was fixed and then
 passed 8 of 8 isolation cases. Scored on the same 33 questions, raw keyword (BM25) scores find the
-right documents but cannot separate answerable from unanswerable questions at any cutoff, so the
-profile setting stays refused until a better relevance signal passes the baseline's guards.
+right documents but cannot separate answerable from unanswerable questions at any cutoff. The free
+semantic ranker's reranker score can: at a 0.625 cutoff it passes every guard with a 0.59 answer
+rate and no false answers, though paraphrases are still unanswered. The profile setting stays
+refused until the retrieval settings are validated configuration.
 
 ## Deferred
 
@@ -443,13 +445,14 @@ slices. Remaining, in order:
 3. **Azure AI Search reference adapter.** Built and validated live on a Free tier
    ([ADR 0023](../decisions/0023-azure-ai-search-retrieval-adapter.md)): provider, REST backend,
    `infra/search.bicep`, and a passing live isolation check. Keyword scoring fails the baseline's
-   answerability guard, so the adapter stays refused. Remaining, in order: choose a relevance signal
-   that can abstain (the semantic ranker's reranker score is free on this tier and is the first
-   candidate; vector or hybrid search needs embeddings and cost approval) and score it with
-   `eval-retrieval`; move the score mapping, retrieval limit and attempt count into validated
-   configuration, which lifts the `azure-ai-search` refusal; swap to the Azure SDK if it can be
-   locked. Then **host the grounded profile over HTTP with streaming**, using label-filtered
-   queries from this adapter.
+   answerability guard, but the free semantic ranker's reranker score passes every guard at a
+   0.625 cutoff (0.59 answer rate, no false answers; paraphrases still unanswered). The adapter
+   stays refused until configuration lands. Remaining, in order: move the retrieval mode, score
+   mapping, minimum score, retrieval limit and attempt count into validated configuration, which
+   lifts the `azure-ai-search` refusal; re-check the cutoff on a larger, more realistic question
+   set and corpus; swap to the Azure SDK if it can be locked. Vector or hybrid search, which may
+   recover paraphrases, needs embeddings and cost approval. Then **host the grounded profile over
+   HTTP with streaming**, using label-filtered queries from this adapter.
 4. **Word and PDF ingestion** (planned; after the previous step decides the Azure ingestion path).
    Today only Markdown is ingested. Each format becomes an *extractor* that turns the original file
    into structured text, so the existing chunker, chunk identity ([ADR 0017](../decisions/0017-deterministic-chunk-identity.md))

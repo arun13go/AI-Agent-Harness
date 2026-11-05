@@ -16,6 +16,13 @@ param tags object = {}
 ])
 param sku string
 
+@description('Semantic ranker plan. "free" allows about 1,000 semantic queries a month at no cost; "disabled" turns it off.')
+@allowed([
+  'disabled'
+  'free'
+])
+param semanticSearch string = 'disabled'
+
 // Keyless by design: shared keys are disabled and callers authenticate with Entra roles. Role
 // assignments are granted separately to the agent identity (read) and to the operator (write).
 resource search 'Microsoft.Search/searchServices@2025-05-01' = {
@@ -31,7 +38,7 @@ resource search 'Microsoft.Search/searchServices@2025-05-01' = {
     hostingMode: 'Default'
     publicNetworkAccess: 'enabled'
     disableLocalAuth: true
-    semanticSearch: 'disabled'
+    semanticSearch: semanticSearch
   }
 }
 

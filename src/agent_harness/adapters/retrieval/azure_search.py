@@ -83,6 +83,23 @@ def saturating_score(half_point: float) -> Callable[[float], float]:
     return lambda raw: raw / (raw + half_point)
 
 
+def linear_score(maximum: float) -> Callable[[float], float]:
+    """Map a score in [0, maximum] linearly to [0, 1], rejecting anything outside that range.
+
+    Suits scores with a documented scale, such as the semantic reranker's 0 to 4.
+    """
+
+    if not math.isfinite(maximum) or maximum <= 0.0:
+        raise InputValidationError("Score maximum must be a positive finite number")
+
+    def mapper(raw: float) -> float:
+        if not 0.0 <= raw <= maximum:
+            raise RetrievalError("Search score is outside the expected range")
+        return raw / maximum
+
+    return mapper
+
+
 def build_scope_filter(identity: IdentityScope, authorization_labels: Sequence[str]) -> str:
     """Return the OData pre-filter for the caller's tenant and labels.
 

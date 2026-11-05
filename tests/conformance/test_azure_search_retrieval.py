@@ -23,6 +23,7 @@ from agent_harness.adapters.retrieval.azure_search import (
     AzureSearchRetrievalProvider,
     build_scope_filter,
     evidence_to_document,
+    linear_score,
     saturating_score,
 )
 from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
@@ -550,3 +551,18 @@ def test_saturating_score_is_bounded_and_monotonic() -> None:
 def test_saturating_score_rejects_invalid_half_points(half_point: float) -> None:
     with pytest.raises(InputValidationError):
         saturating_score(half_point)
+
+
+def test_linear_score_maps_the_documented_scale_and_rejects_anything_outside_it() -> None:
+    mapper = linear_score(4.0)
+
+    assert [mapper(0.0), mapper(2.0), mapper(4.0)] == [0.0, 0.5, 1.0]
+    for outside in (-0.1, 4.1, math.nan, math.inf):
+        with pytest.raises(RetrievalError):
+            mapper(outside)
+
+
+@pytest.mark.parametrize("maximum", [0.0, -1.0, math.nan, math.inf])
+def test_linear_score_rejects_invalid_maximums(maximum: float) -> None:
+    with pytest.raises(InputValidationError):
+        linear_score(maximum)

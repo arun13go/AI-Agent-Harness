@@ -52,8 +52,9 @@ improves. The live results below show that keyword search alone does not.
 - **Index shape.** `INDEX_FIELDS` declares the chunk identifier as the key, searchable content,
   lineage, freshness, tenant, labels and evidence flags. `evidence_to_document` is the only writer,
   and `index_definition` states every field attribute explicitly.
-- **Infrastructure.** `infra/search.bicep` creates a keyless service (`disableLocalAuth`,
-  semantic search off, one replica and partition). `main.bicep` creates it only when
+- **Infrastructure.** `infra/search.bicep` creates a keyless service (`disableLocalAuth`, one
+  replica and partition, semantic ranker `disabled` unless `searchSemanticSearch` is `free`).
+  `main.bicep` creates it only when
   `searchServiceSku` is `free` or `basic`, optionally in its own resource group
   (`searchResourceGroupName`). The default creates nothing, so `azd up` and the Deploy to Azure
   button are unchanged. Roles are never granted by the template.
@@ -82,11 +83,36 @@ improves. The live results below show that keyword search alone does not.
   must not be enabled for answering with it. The set has 33 questions on a 24-chunk corpus, so the
   shape is the finding, not the exact numbers.
 
+## Semantic ranker (Free plan, 5 November 2026)
+
+The free semantic plan was enabled on the same service (about 1,000 queries a month, no cost; the
+what-if showed only `semanticSearch` changing) and the index gained a semantic configuration over
+the content field. With `--search-semantic` the backend reports the reranker score (0 to 4), and
+results the service did not re-rank count as zero. `linear_score(4.0)` maps it to [0, 1] and
+rejects values outside the scale.
+
+The reranker separates the groups far better than keyword scores. Every unanswerable and near-miss
+question scored at most 2.27, while all exact, multi-source and keyword questions and 1 of 8
+paraphrases scored 2.38 or higher. Through the real grounded path:
+
+| Minimum score (reranker) | Answer rate | Source recall | Citation precision | False answers | Paraphrases answered |
+|---|---|---|---|---|---|
+| 0.625 (2.5) | 0.59 | 0.55 | 1.00 | 0.00 | 0 of 8 |
+| 0.5 (2.0) | 0.91 | 0.82 | 0.83 | 0.27 | 6 of 8 |
+| Lexical baseline (0.5) | 0.50 | 0.45 | 1.00 | 0.00 | 0 of 8 |
+
+At 0.625 the adapter passes every committed guard and beats the baseline. Paraphrases and
+near-misses overlap in score (1.93 to 2.50 against 1.63 to 2.27), so no single cutoff recovers
+paraphrases without answering some questions that should abstain. The cutoff was picked on the
+same 33 questions it is scored on, over a 24-chunk synthetic corpus, so it is an indication and
+not a tuned setting. The free plan is for evaluation; production use needs the paid plan.
+
 ## Consequences
 
-- `retrieval.adapter: azure-ai-search` stays refused by `create_grounded_executor`. Enabling it
-  needs a relevance signal that passes the same guards, such as the semantic ranker's reranker
-  score or vector similarity, and validated threshold settings.
+- `retrieval.adapter: azure-ai-search` stays refused by `create_grounded_executor`. The semantic
+  score now passes the baseline's guards, so the remaining work is configuration: the retrieval
+  mode, score mapping, minimum score, retrieval limit and attempt count become validated settings,
+  and the choice of cutoff is revisited on a larger, more realistic question set.
 - The shared scope suite still runs over both providers against a fake that interprets only the
   filter this adapter emits. The live isolation check is the proof against the real service and
   must be rerun after any change to the filter, the index definition or the service API version.

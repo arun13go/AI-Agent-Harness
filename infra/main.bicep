@@ -42,6 +42,13 @@ param searchServiceSku string = 'none'
 @description('Resource group for the search service. Empty reuses resourceGroupName; any other name is created by this template so the experiment can be removed by deleting that group.')
 param searchResourceGroupName string = ''
 
+@description('Semantic ranker plan for the search service.')
+@allowed([
+  'disabled'
+  'free'
+])
+param searchSemanticSearch string = 'disabled'
+
 var createSearchGroup = searchServiceSku != 'none' && !empty(searchResourceGroupName) && searchResourceGroupName != resourceGroupName
 var searchTags = {
   'azd-env-name': environmentName
@@ -65,6 +72,7 @@ module search './search.bicep' = if (searchServiceSku != 'none' && !createSearch
     location: location
     tags: searchTags
     sku: searchServiceSku == 'basic' ? 'basic' : 'free'
+    semanticSearch: searchSemanticSearch
   }
 }
 
@@ -75,6 +83,7 @@ module searchInOwnGroup './search.bicep' = if (createSearchGroup) {
     location: location
     tags: searchTags
     sku: searchServiceSku == 'basic' ? 'basic' : 'free'
+    semanticSearch: searchSemanticSearch
   }
 }
 

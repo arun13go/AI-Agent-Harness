@@ -14,6 +14,7 @@ from agent_harness.adapters.foundry.model_client import create_foundry_chat_clie
 from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
 from agent_harness.adapters.retrieval.azure_search import (
     AzureSearchRetrievalProvider,
+    linear_score,
     saturating_score,
 )
 from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
@@ -184,6 +185,12 @@ def _build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="Raw service score that maps to 0.5 (score / (score + half point))",
+    )
+
+    eval_parser.add_argument(
+        "--search-semantic",
+        action="store_true",
+        help="Use the semantic ranker's 0-4 reranker score (needs the semantic plan enabled)",
     )
 
     search_parser = subparsers.add_parser(
@@ -401,9 +408,14 @@ async def _run_eval_retrieval(args: argparse.Namespace) -> dict[str, object]:
     if (args.search_endpoint is None) != (args.search_index is None):
         raise ConfigurationError("--search-endpoint and --search-index must be given together")
     if args.search_endpoint is not None:
+        semantic = bool(args.search_semantic)
         retrieval = AzureSearchRetrievalProvider(
-            build_backend(endpoint=args.search_endpoint, index_name=args.search_index),
-            score_mapper=saturating_score(args.search_half_point),
+            build_backend(
+                endpoint=args.search_endpoint, index_name=args.search_index, semantic=semantic
+            ),
+            score_mapper=(
+                linear_score(4.0) if semantic else saturating_score(args.search_half_point)
+            ),
         )
     report = await evaluate_retrieval(
         dataset_dir=args.dataset,

@@ -18,10 +18,12 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol, cast
 from urllib.parse import quote, urlsplit
 
-from agent_harness.adapters.retrieval.azure_search import INDEX_FIELDS
+from agent_harness.adapters.retrieval.azure_search import INDEX_FIELDS, SCORE_KEY
 from agent_harness.core.errors import InputValidationError, RetrievalError
 
 API_VERSION = "2024-07-01"
+SEMANTIC_CONFIGURATION = "default"
+RERANKER_KEY = "@search.rerankerScore"
 TOKEN_SCOPE = "https://search.azure.com/.default"
 _ALLOWED_HOST_SUFFIXES = (".search.windows.net", ".search.azure.us", ".search.azure.cn")
 _SERVICE_HOST = re.compile(r"^[a-z0-9][a-z0-9-]{0,58}[a-z0-9]$")
@@ -90,11 +92,27 @@ def index_definition(index_name: str) -> dict[str, Any]:
                 "retrievable": True,
             }
         )
-    return {"name": _index_name(index_name), "fields": fields}
+    return {
+        "name": _index_name(index_name),
+        "fields": fields,
+        "semantic": {
+            "configurations": [
+                {
+                    "name": SEMANTIC_CONFIGURATION,
+                    "prioritizedFields": {"prioritizedContentFields": [{"fieldName": "content"}]},
+                }
+            ]
+        },
+    }
 
 
 class AzureSearchRestBackend:
-    """Query one index through the REST API; implements the provider's ``SearchBackend`` port."""
+    """Query one index through the REST API; implements the provider's ``SearchBackend`` port.
+
+    With ``semantic=True`` the service re-ranks the top results and the backend reports the
+    reranker score (0 to 4) as the result score. Results the service did not re-rank have no such
+    score and are reported as 0, so the provider drops them.
+    """
 
     def __init__(
         self,
@@ -105,6 +123,7 @@ class AzureSearchRestBackend:
         timeout_seconds: float = 15.0,
         opener: urllib.request.OpenerDirector | None = None,
         clock: Callable[[], float] = time.time,
+        semantic: bool = False,
     ) -> None:
         if not 0.0 < timeout_seconds <= 120.0:
             raise InputValidationError("Search timeout must be between 0 and 120 seconds")
@@ -114,6 +133,7 @@ class AzureSearchRestBackend:
         self._timeout = timeout_seconds
         self._opener = opener or urllib.request.build_opener(_NoRedirect)
         self._clock = clock
+        self._semantic = semantic
         self._token_lock = threading.Lock()
         self._cached_token: AccessToken | None = None
 
@@ -133,18 +153,23 @@ class AzureSearchRestBackend:
     async def search(
         self, *, text: str, odata_filter: str, top: int
     ) -> Sequence[Mapping[str, Any]]:
-        """Run a simple-syntax keyword search with the scope filter applied by the service."""
+        """Run a keyword search, or a semantic one, with the scope filter applied by the service."""
 
-        body = {
+        body: dict[str, Any] = {
             "search": text,
-            "queryType": "simple",
+            "queryType": "semantic" if self._semantic else "simple",
             "searchMode": "any",
             "filter": odata_filter,
             "top": top,
             "select": _SELECT,
         }
+        if self._semantic:
+            body["semanticConfiguration"] = SEMANTIC_CONFIGURATION
         payload = await self._call("POST", f"/indexes/{self._index}/docs/search", body)
-        return _objects(payload.get("value"), "response")
+        hits = _objects(payload.get("value"), "response")
+        if not self._semantic:
+            return hits
+        return [{**hit, SCORE_KEY: _reranker_score(hit)} for hit in hits]
 
     async def create_index(self) -> None:
         """Create or update the index definition (idempotent)."""
@@ -212,6 +237,15 @@ class AzureSearchRestBackend:
         if not isinstance(parsed, dict):
             raise RetrievalError("Search backend returned an unexpected response")
         return parsed  # pyright: ignore[reportUnknownVariableType]
+
+
+def _reranker_score(hit: Mapping[str, Any]) -> float:
+    score = hit.get(RERANKER_KEY)
+    if score is None:
+        return 0.0
+    if isinstance(score, bool) or not isinstance(score, int | float) or not 0.0 <= score <= 4.0:
+        raise RetrievalError("Search backend returned an invalid reranker score")
+    return float(score)
 
 
 def _objects(value: object, what: str) -> list[dict[str, Any]]:

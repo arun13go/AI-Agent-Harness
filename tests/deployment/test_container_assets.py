@@ -77,6 +77,7 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
         "registrationConfig",
         "searchServiceSku",
         "searchResourceGroupName",
+        "searchSemanticSearch",
     }
 
     assert set(template["resources"]) == {
@@ -89,6 +90,7 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
     }
     assert template["parameters"]["searchServiceSku"]["defaultValue"] == "none"
     assert template["parameters"]["searchResourceGroupName"]["defaultValue"] == ""
+    assert template["parameters"]["searchSemanticSearch"]["defaultValue"] == "disabled"
     assert "createSearchGroup" in template["variables"]
     assert template["resources"]["searchGroup"]["condition"] == "[variables('createSearchGroup')]"
     assert template["resources"]["searchInOwnGroup"]["condition"] == (
@@ -102,7 +104,10 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
     [search] = [entry for entry in nested if entry["type"] == "Microsoft.Search/searchServices"]
     assert search["type"] == "Microsoft.Search/searchServices"
     assert search["properties"]["disableLocalAuth"] is True
-    assert search["properties"]["semanticSearch"] == "disabled"
+    assert search["properties"]["semanticSearch"] == "[parameters('semanticSearch')]"
+    nested_parameters = template["resources"]["search"]["properties"]["template"]["parameters"]
+    assert nested_parameters["semanticSearch"]["defaultValue"] == "disabled"
+    assert nested_parameters["semanticSearch"]["allowedValues"] == ["disabled", "free"]
     assert search["properties"]["replicaCount"] == 1
     assert search["properties"]["partitionCount"] == 1
     assert template["parameters"]["registrationConfig"]["nullable"] is True

@@ -46,12 +46,17 @@ from tests.conformance.fixtures import (
 _FILTER = re.compile(
     r"^tenantScope eq '((?:[^']|'')*)' and "
     r"(?:(?P<none>not authorizationLabels/any\(\))"
-    r"|authorizationLabels/all\(l: search\.in\(l, '(?P<labels>(?:[^']|'')*)', ','\)\))$"
+    r"|\(not authorizationLabels/any\(\) or "
+    r"authorizationLabels/any\(l: search\.in\(l, '(?P<labels>(?:[^']|'')*)', ','\)\)\))$"
 )
 
 
 class FakeSearchBackend:
-    """Apply the scope filter first, then rank by how many query words a document contains."""
+    """Apply the scope pre-filter first, then rank by how many query words a document contains.
+
+    Like the real service, the pre-filter is a superset of what the caller may read: tenant
+    matches, and the document is unlabeled or shares a label with the caller.
+    """
 
     def __init__(self, documents: Sequence[Mapping[str, Any]]) -> None:
         self.documents = list(documents)
@@ -62,8 +67,8 @@ class FakeSearchBackend:
         match = _FILTER.fullmatch(odata_filter)
         assert match is not None, f"fake cannot interpret filter: {odata_filter}"
         tenant = match.group(1).replace("''", "'")
-        allowed = (
-            None
+        allowed: frozenset[str] = (
+            frozenset[str]()
             if match.group("none")
             else frozenset(match.group("labels").replace("''", "'").split(","))
         )
@@ -73,7 +78,7 @@ class FakeSearchBackend:
             labels = frozenset(document[LABELS_FIELD])
             if document[TENANT_FIELD] != tenant:
                 continue
-            if not labels.issubset(allowed if allowed is not None else frozenset()):
+            if labels and labels.isdisjoint(allowed):
                 continue
             overlap = len(words & tokenize(document["content"]))
             if overlap:
@@ -241,7 +246,8 @@ async def test_invalid_labels_are_rejected_by_every_provider(
 def test_filter_is_built_from_canonical_labels() -> None:
     assert build_scope_filter(IDENTITY_A, ("group:ops", "group:readers", "group:ops")) == (
         "tenantScope eq 'tenant-0001' and "
-        "authorizationLabels/all(l: search.in(l, 'group:ops,group:readers', ','))"
+        "(not authorizationLabels/any() or "
+        "authorizationLabels/any(l: search.in(l, 'group:ops,group:readers', ',')))"
     )
 
 
@@ -287,9 +293,38 @@ async def test_provider_sends_filter_query_and_limit_to_the_backend() -> None:
         {
             "text": "restart service",
             "odata_filter": build_scope_filter(IDENTITY_A, LABELS),
-            "top": 7,
+            "top": 50,
         }
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("limit", "fetch"), [(1, 50), (10, 50), (11, 55), (100, 500)])
+async def test_provider_over_fetches_because_the_label_rule_is_applied_after_ranking(
+    limit: int, fetch: int
+) -> None:
+    backend = FakeSearchBackend([])
+    provider = AzureSearchRetrievalProvider(
+        backend, score_mapper=saturating_score(1.0), clock=lambda: NOW
+    )
+
+    await provider.retrieve(
+        identity=IDENTITY_A, authorization_labels=LABELS, query="restart", limit=limit
+    )
+
+    assert backend.calls[0]["top"] == fetch
+
+
+@pytest.mark.asyncio
+async def test_visible_evidence_survives_higher_ranked_documents_that_need_more_labels() -> None:
+    decoys = [
+        item(f"decoy-{n:02d}", labels=("group:readers", "group:admins"), text="restart service now")
+        for n in range(40)
+    ]
+    wanted = item("wanted", labels=("group:readers",), text="restart")
+    provider = azure_provider([*decoys, wanted])
+
+    assert await ids(provider, labels=("group:readers",), limit=1) == ["wanted"]
 
 
 @pytest.mark.asyncio
@@ -307,7 +342,6 @@ async def test_fake_backend_rejects_filters_it_cannot_interpret() -> None:
     [
         item("other-tenant", tenant=TENANT_B),
         item("other-label", labels=("group:admins",)),
-        item("extra-label", labels=("group:readers", "group:admins")),
     ],
 )
 async def test_out_of_scope_hits_fail_closed_without_echoing_them(leaked: RetrievedItem) -> None:
@@ -325,6 +359,22 @@ async def test_out_of_scope_hits_fail_closed_without_echoing_them(leaked: Retrie
     assert leaked.content not in str(raised.value)
     assert leaked.item_id not in str(raised.value)
     assert TENANT_B not in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_documents_needing_an_unheld_label_are_dropped_not_returned() -> None:
+    partial = item("partial", labels=("group:readers", "group:admins"))
+    provider = AzureSearchRetrievalProvider(
+        LeakyBackend(docs([item("fine", labels=("group:readers",)), partial])),
+        score_mapper=saturating_score(1.0),
+        clock=lambda: NOW,
+    )
+
+    found = await provider.retrieve(
+        identity=IDENTITY_A, authorization_labels=("group:readers",), query="restart", limit=10
+    )
+
+    assert [entry.item_id for entry in found] == ["fine"]
 
 
 class FixedBackend:
@@ -389,7 +439,17 @@ async def test_duplicate_and_excess_results_are_rejected() -> None:
     with pytest.raises(RetrievalError):
         await run_hits([hit("a"), hit("a")])
     with pytest.raises(RetrievalError):
-        await run_hits([hit("a"), hit("b")], limit=1)
+        await run_hits([hit(f"item-{n:03d}") for n in range(51)], limit=1)
+
+
+@pytest.mark.asyncio
+async def test_results_are_trimmed_to_the_requested_limit_after_ranking() -> None:
+    found = await run_hits(
+        [hit("c", **{SCORE_KEY: 1.0}), hit("a", **{SCORE_KEY: 3.0}), hit("b", **{SCORE_KEY: 2.0})],
+        limit=2,
+    )
+
+    assert [entry.item_id for entry in found] == ["a", "b"]
 
 
 @pytest.mark.asyncio

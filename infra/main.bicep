@@ -31,8 +31,51 @@ type RegistrationConfig = {
 @description('Opt-in candidate registration using an existing approved identity. Null leaves the azd path unchanged.')
 param registrationConfig RegistrationConfig?
 
+@description('Opt-in Azure AI Search service for the grounded profile. "none" creates nothing.')
+@allowed([
+  'none'
+  'free'
+  'basic'
+])
+param searchServiceSku string = 'none'
+
+@description('Resource group for the search service. Empty reuses resourceGroupName; any other name is created by this template so the experiment can be removed by deleting that group.')
+param searchResourceGroupName string = ''
+
+var createSearchGroup = searchServiceSku != 'none' && !empty(searchResourceGroupName) && searchResourceGroupName != resourceGroupName
+var searchTags = {
+  'azd-env-name': environmentName
+  'azd-service-name': 'harness'
+}
+
 resource existingGroup 'Microsoft.Resources/resourceGroups@2025-04-01' existing = {
   name: resourceGroupName
+}
+
+resource searchGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = if (createSearchGroup) {
+  name: searchResourceGroupName
+  location: location
+  tags: searchTags
+}
+
+module search './search.bicep' = if (searchServiceSku != 'none' && !createSearchGroup) {
+  scope: existingGroup
+  params: {
+    name: 'srch-harness-${uniqueString(subscription().id, resourceGroupName)}'
+    location: location
+    tags: searchTags
+    sku: searchServiceSku == 'basic' ? 'basic' : 'free'
+  }
+}
+
+module searchInOwnGroup './search.bicep' = if (createSearchGroup) {
+  scope: searchGroup
+  params: {
+    name: 'srch-harness-${uniqueString(subscription().id, searchResourceGroupName)}'
+    location: location
+    tags: searchTags
+    sku: searchServiceSku == 'basic' ? 'basic' : 'free'
+  }
 }
 
 module registry './registry.bicep' = {
@@ -78,3 +121,5 @@ output AZURE_AI_PROJECT_ENDPOINT string = registry.outputs.projectEndpoint
 output FOUNDRY_PROJECT_ENDPOINT string = registry.outputs.projectEndpoint
 output AZURE_AI_MODEL_DEPLOYMENT_NAME string = modelDeploymentName
 output HARNESS_REGISTRATION_RECEIPT object = registrationConfig != null ? registration!.outputs.receipt : {}
+output AZURE_SEARCH_ENDPOINT string = createSearchGroup ? searchInOwnGroup!.outputs.endpoint : (searchServiceSku != 'none' ? search!.outputs.endpoint : '')
+output AZURE_SEARCH_SERVICE_NAME string = createSearchGroup ? searchInOwnGroup!.outputs.name : (searchServiceSku != 'none' ? search!.outputs.name : '')

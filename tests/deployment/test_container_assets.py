@@ -75,9 +75,36 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
         "foundryProjectName",
         "modelDeploymentName",
         "registrationConfig",
+        "searchServiceSku",
+        "searchResourceGroupName",
     }
 
-    assert set(template["resources"]) == {"existingGroup", "registry", "registration"}
+    assert set(template["resources"]) == {
+        "existingGroup",
+        "registry",
+        "registration",
+        "search",
+        "searchGroup",
+        "searchInOwnGroup",
+    }
+    assert template["parameters"]["searchServiceSku"]["defaultValue"] == "none"
+    assert template["parameters"]["searchResourceGroupName"]["defaultValue"] == ""
+    assert "createSearchGroup" in template["variables"]
+    assert template["resources"]["searchGroup"]["condition"] == "[variables('createSearchGroup')]"
+    assert template["resources"]["searchInOwnGroup"]["condition"] == (
+        "[variables('createSearchGroup')]"
+    )
+    assert template["resources"]["search"]["condition"] == (
+        "[and(not(equals(parameters('searchServiceSku'), 'none')), "
+        "not(variables('createSearchGroup')))]"
+    )
+    nested = template["resources"]["search"]["properties"]["template"]["resources"]
+    [search] = [entry for entry in nested if entry["type"] == "Microsoft.Search/searchServices"]
+    assert search["type"] == "Microsoft.Search/searchServices"
+    assert search["properties"]["disableLocalAuth"] is True
+    assert search["properties"]["semanticSearch"] == "disabled"
+    assert search["properties"]["replicaCount"] == 1
+    assert search["properties"]["partitionCount"] == 1
     assert template["parameters"]["registrationConfig"]["nullable"] is True
     assert template["resources"]["registration"]["condition"] == (
         "[not(equals(parameters('registrationConfig'), null()))]"

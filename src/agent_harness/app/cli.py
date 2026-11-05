@@ -12,6 +12,10 @@ from uuid import uuid4
 
 from agent_harness.adapters.foundry.model_client import create_foundry_chat_client
 from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
+from agent_harness.adapters.retrieval.azure_search import (
+    AzureSearchRetrievalProvider,
+    saturating_score,
+)
 from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
 from agent_harness.adapters.retrieval.lexical import IdfCoverageScorer
 from agent_harness.adapters.retrieval.markdown_corpus import load_markdown_corpus
@@ -33,6 +37,7 @@ from agent_harness.app.grounded_executor import (
 )
 from agent_harness.app.read_executor import ReadToolExecutor
 from agent_harness.app.retrieval_eval import evaluate_retrieval
+from agent_harness.app.search_live import build_backend, check_isolation, load_corpus
 from agent_harness.core.configuration import HarnessConfig, ProfileName, load_harness_config
 from agent_harness.core.contracts import Tool
 from agent_harness.core.errors import ConfigurationError, HarnessError
@@ -169,6 +174,26 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Report metrics without checking thresholds.yaml",
     )
+    eval_parser.add_argument(
+        "--search-endpoint",
+        help="Score a live Azure AI Search index instead of the local provider",
+    )
+    eval_parser.add_argument("--search-index", help="Index holding the evaluation corpus")
+    eval_parser.add_argument(
+        "--search-half-point",
+        type=float,
+        default=1.0,
+        help="Raw service score that maps to 0.5 (score / (score + half point))",
+    )
+
+    search_parser = subparsers.add_parser(
+        "search-index",
+        help="Create, load, verify or delete a live Azure AI Search index (Entra auth, no keys)",
+    )
+    search_parser.add_argument("--endpoint", required=True)
+    search_parser.add_argument("--index", required=True)
+    search_parser.add_argument("--action", choices=("load", "isolation", "delete"), required=True)
+    search_parser.add_argument("--dataset", type=Path, default=Path("evals/grounded-relevance"))
     return parser
 
 
@@ -372,14 +397,35 @@ async def _run_eval_retrieval(args: argparse.Namespace) -> dict[str, object]:
     ensure_grounded_profile_supported(config)
     if not 0.0 <= args.minimum_score <= 1.0:
         raise ConfigurationError("Minimum score must be between 0 and 1")
+    retrieval = None
+    if (args.search_endpoint is None) != (args.search_index is None):
+        raise ConfigurationError("--search-endpoint and --search-index must be given together")
+    if args.search_endpoint is not None:
+        retrieval = AzureSearchRetrievalProvider(
+            build_backend(endpoint=args.search_endpoint, index_name=args.search_index),
+            score_mapper=saturating_score(args.search_half_point),
+        )
     report = await evaluate_retrieval(
         dataset_dir=args.dataset,
         config=config,
         event_schema=args.event_schema,
         minimum_score=args.minimum_score,
         apply_thresholds=not args.report_only,
+        retrieval=retrieval,
     )
     return report.to_json()
+
+
+async def _run_search_index(args: argparse.Namespace) -> dict[str, object]:
+    """Operate the live search index named on the command line."""
+
+    backend = build_backend(endpoint=args.endpoint, index_name=args.index)
+    if args.action == "load":
+        return await load_corpus(backend, args.dataset)
+    if args.action == "isolation":
+        return await check_isolation(backend)
+    await backend.delete_index()
+    return {"action": "delete", "index": args.index}
 
 
 async def _run_action_demo(args: argparse.Namespace) -> dict[str, object]:
@@ -457,6 +503,8 @@ def main(argv: list[str] | None = None) -> int:
             output = asyncio.run(_run_grounded(args))
         elif args.command == "eval-retrieval":
             output = asyncio.run(_run_eval_retrieval(args))
+        elif args.command == "search-index":
+            output = asyncio.run(_run_search_index(args))
         else:
             output = asyncio.run(_run_read(args))
     except HarnessError as error:

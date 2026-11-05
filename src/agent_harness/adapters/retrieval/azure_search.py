@@ -52,6 +52,10 @@ INDEX_FIELDS: tuple[Mapping[str, Any], ...] = (
 
 _DOCUMENT_KEY = re.compile(r"^[A-Za-z0-9_=-]{1,1024}$")
 _MAX_TEXT = 4096
+# The label rule is enforced after the service ranks, so ask for more than the caller needs.
+_OVERFETCH = 5
+_MIN_FETCH = 50
+_MAX_FETCH = 1000
 _CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
 
 
@@ -80,17 +84,21 @@ def saturating_score(half_point: float) -> Callable[[float], float]:
 
 
 def build_scope_filter(identity: IdentityScope, authorization_labels: Sequence[str]) -> str:
-    """Return the OData filter that limits results to the caller's tenant and labels.
+    """Return the OData pre-filter for the caller's tenant and labels.
 
-    A document is visible when every label on it is among the caller's labels, and a document
-    with no labels is visible to everyone in the tenant, matching the in-memory provider.
+    The service cannot express "every label on the document is held by the caller", because
+    inside ``all`` it accepts only negated tests. The filter is therefore a safe superset: the
+    tenant matches, and the document is unlabeled or shares at least one label with the caller.
+    The provider enforces the exact rule on the results.
     """
 
     validate_identity_scope(identity)
     labels = validate_authorization_labels(authorization_labels)
     if labels:
         allowed = _literal(",".join(labels))
-        label_clause = f"{LABELS_FIELD}/all(l: search.in(l, {allowed}, ','))"
+        label_clause = (
+            f"(not {LABELS_FIELD}/any() or {LABELS_FIELD}/any(l: search.in(l, {allowed}, ',')))"
+        )
     else:
         label_clause = f"not {LABELS_FIELD}/any()"
     return f"{TENANT_FIELD} eq {_literal(identity.tenant_scope)} and {label_clause}"
@@ -148,29 +156,34 @@ class AzureSearchRetrievalProvider:
         retrieved_at = self._clock()
         if retrieved_at.tzinfo is None or retrieved_at.utcoffset() is None:
             raise InputValidationError("Retrieval time must be timezone-aware")
+        fetch = min(_MAX_FETCH, max(limit * _OVERFETCH, _MIN_FETCH))
         try:
-            documents = await self._backend.search(text=query, odata_filter=odata_filter, top=limit)
+            documents = await self._backend.search(text=query, odata_filter=odata_filter, top=fetch)
         except HarnessError:
             raise
         except Exception as error:
             raise RetrievalError("Search backend request failed") from error
-        if len(documents) > limit:
+        if len(documents) > fetch:
             raise RetrievalError("Search backend returned more results than requested")
         items: dict[str, RetrievedItem] = {}
         for document in documents:
             item = self._to_item(document, retrieved_at)
-            if item.tenant_scope != identity.tenant_scope or not frozenset(
-                item.authorization_labels
-            ).issubset(allowed):
+            labels = frozenset(item.authorization_labels)
+            # The pre-filter guarantees the tenant and, for labeled documents, at least one shared
+            # label. A hit that breaks either is a backend or index defect, not a ranking detail.
+            if item.tenant_scope != identity.tenant_scope or (
+                labels and labels.isdisjoint(allowed)
+            ):
                 raise AuthorizationError("Search returned evidence outside the caller's scope")
             if item.item_id in items:
                 raise RetrievalError("Search returned duplicate evidence identifiers")
-            items[item.item_id] = item
+            if labels.issubset(allowed):
+                items[item.item_id] = item
         ranked = sorted(
             (item for item in items.values() if item.score > 0.0),
             key=lambda item: (-item.score, item.item_id),
         )
-        return tuple(ranked)
+        return tuple(ranked[:limit])
 
     def _to_item(self, document: Mapping[str, Any], retrieved_at: datetime) -> RetrievedItem:
         raw_score = document.get(SCORE_KEY)

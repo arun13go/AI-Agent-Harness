@@ -18,6 +18,7 @@ from agent_harness.adapters.retrieval.markdown_corpus import load_markdown_corpu
 from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.app.grounded_executor import create_grounded_executor
 from agent_harness.core.configuration import HarnessConfig
+from agent_harness.core.contracts import RetrievalProvider
 from agent_harness.core.errors import ConfigurationError, InputValidationError
 from agent_harness.core.types import (
     AnswerabilityRoute,
@@ -26,6 +27,7 @@ from agent_harness.core.types import (
     ModelRequest,
     ModelResponse,
     RequestContext,
+    RetrievedItem,
     TokenUsage,
 )
 
@@ -181,6 +183,18 @@ def _validate[ModelT: BaseModel](model: type[ModelT], value: object, name: str) 
         raise ConfigurationError(f"Invalid evaluation file '{name}': {error}") from error
 
 
+def load_evaluation_corpus(dataset_dir: Path) -> Sequence[RetrievedItem]:
+    """Load the dataset's Markdown corpus as evidence for the fixed evaluation tenant."""
+
+    return load_markdown_corpus(
+        dataset_dir / "corpus",
+        tenant_scope=EVALUATION_TENANT,
+        authorization_labels=(),
+        ingested_at=_EVALUATION_TIME,
+        fresh_for=timedelta(days=36500),
+    )
+
+
 async def evaluate_retrieval(
     *,
     dataset_dir: Path,
@@ -188,8 +202,13 @@ async def evaluate_retrieval(
     event_schema: Path,
     minimum_score: float = 0.5,
     apply_thresholds: bool = True,
+    retrieval: RetrievalProvider | None = None,
 ) -> EvaluationReport:
-    """Run every question through the composed grounded path and score the outcomes."""
+    """Run every question through the composed grounded path and score the outcomes.
+
+    By default retrieval is the in-memory lexical provider. Pass another provider to score it on
+    the same questions; its index must already hold the evaluation corpus for the same tenant.
+    """
 
     dataset = _validate(
         EvaluationDataset, _load_yaml(dataset_dir / "questions.yaml"), "questions.yaml"
@@ -199,13 +218,7 @@ async def evaluate_retrieval(
     if apply_thresholds and thresholds_path.is_file():
         thresholds = _validate(Thresholds, _load_yaml(thresholds_path), "thresholds.yaml")
 
-    corpus = load_markdown_corpus(
-        dataset_dir / "corpus",
-        tenant_scope=EVALUATION_TENANT,
-        authorization_labels=(),
-        ingested_at=_EVALUATION_TIME,
-        fresh_for=timedelta(days=36500),
-    )
+    corpus = load_evaluation_corpus(dataset_dir)
     known_sources = {item.source.source_id for item in corpus}
     for question in dataset.questions:
         missing = sorted(set(question.expected_sources) - known_sources)
@@ -217,7 +230,8 @@ async def evaluate_retrieval(
     audit = InMemoryAuditSink(event_schema)
     executor = create_grounded_executor(
         config=config,
-        retrieval=InMemoryRetrievalProvider(
+        retrieval=retrieval
+        or InMemoryRetrievalProvider(
             corpus, clock=lambda: _EVALUATION_TIME, scorer=IdfCoverageScorer()
         ),
         runtime=_NoModel(),

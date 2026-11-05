@@ -196,6 +196,13 @@ It reports answer rate, source recall, citation precision and false-answer rate 
 exits 1 if a guard in [`evals/grounded-relevance/thresholds.yaml`](evals/grounded-relevance/thresholds.yaml)
 fails. The false-answer guard is fixed at zero.
 
+An optional Azure AI Search service (Free tier works for evaluation) can be created with
+`searchServiceSku` in [`infra/main.bicep`](infra/main.bicep). It is off by default, uses Entra roles
+only, and is not yet usable for answering because keyword scores cannot abstain
+([ADR 0023](docs/decisions/0023-azure-ai-search-retrieval-adapter.md)). With roles granted to you,
+`agent-harness search-index --action load|isolation|delete` operates an index, and
+`eval-retrieval --search-endpoint <url> --search-index <name> --report-only` scores it.
+
 Examples live under [`config/profiles/`](config/profiles/).
 
 ## Repository map

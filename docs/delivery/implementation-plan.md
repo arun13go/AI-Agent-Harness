@@ -25,8 +25,8 @@ adapter expectations.
 | 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Complete |
-| 2 | Grounded-assistant profile | In progress (grounded path on Azure AI Search, Markdown/PDF/Word ingestion and local HTTP hosting done; hosted deployment and close-out decisions open) |
-| 3 | Durable Azure adapters | Not started |
+| 2 | Grounded-assistant profile | Complete (grounded path on Azure AI Search, Markdown/PDF/Word ingestion, local HTTP hosting; a hosted grounded deployment is not done and is carried forward) |
+| 3 | Durable Azure adapters | Next |
 | 4 | Evaluation and operations | Not started |
 | 5 | Deployment and CI hardening | Not started |
 | 6 | Pilots and v1.0 release | Not started |
@@ -347,7 +347,7 @@ Phase 1 uses in-memory state, memory, artifacts, approval, and audit. It exclude
 
 | Phase | Deliverable | Exit evidence |
 |---|---|---|
-| 2: Grounding and context | Azure AI Search ingestion and retrieval, multi-format ingestion (Word and PDF), citations, freshness, compaction, episodic-memory policy, and answerability routes | Weak, stale, conflicting, and sufficient evidence follow the correct route; Word and PDF sources chunk with the same identity, scope and safety rules as Markdown |
+| 2: Grounding and context | Azure AI Search ingestion and retrieval, multi-format ingestion (Word and PDF), citations, freshness, compaction, episodic-memory policy, and answerability routes | Weak, stale, missing, and sufficient evidence follow the correct route; flagged (conflicting or malicious) evidence supplied by an adapter is routed, with no built-in detection ([ADR 0028](../decisions/0028-no-flag-producer-or-caveat-in-v1.md)); Word and PDF sources chunk with the same identity, scope and safety rules as Markdown |
 | 3: Azure reference adapters | Cosmos DB memory and run state, Blob artifacts, Azure cache and audit, retention, and Application Insights export | In-memory and Azure adapters pass the same isolation, concurrency, expiry, deletion, and replay tests |
 | 4: Evaluation and operations | Versioned datasets, deterministic and Foundry evaluators, operational SLOs, outcome thresholds, and regression comparison | One go-live report covers policy, quality, safety, latency, cost, and telemetry |
 | 5: Deployment and CI hardening | Modular Bicep, workload-identity CI, preflight, cleanup, production guidance, generated ARM, and drift checks | Both deployment paths pass clean-resource-group tests and CI rejects drift |
@@ -435,11 +435,10 @@ not yet judged.
 - Copilot discovery and conformance work after v1.0.
 - Private-networking modules beyond production integration guidance.
 
-## Current Next Step
+## Phase 2 Close-Out
 
-Continue **Phase 2: Grounding and context** from the completed retrieval, answerability,
-chunk-identity, bounded-context, local grounded-path, lexical-retrieval and relevance-baseline
-slices. Remaining, in order:
+Phase 2 is complete. The slices below are the record of what was built and decided; the current
+next step follows this list. Slices, in the order they were delivered:
 
 1. **Authorization labels for hosting** (built: [ADR 0027](../decisions/0027-grounded-http-hosting.md),
    decided in [ADR 0021](../decisions/0021-caller-authorization-labels.md)).
@@ -493,8 +492,35 @@ slices. Remaining, in order:
    ([ADR 0024](../decisions/0024-retrieval-settings-as-profile-configuration.md),
    [ADR 0026](../decisions/0026-document-extraction-with-document-intelligence.md)); judging whether
    answers are faithful to their evidence is Phase 4 work.
-6. **Episodic-memory policy**, listed in the Phase 2 deliverable, which has no design yet:
-   schedule it or move it to Phase 3 explicitly.
+6. **Evidence-flag producer and `caveat` route** (decided: not built in v1,
+   [ADR 0028](../decisions/0028-no-flag-producer-or-caveat-in-v1.md)).
+7. **Episodic memory and `summarize` compaction** (decided: deferred to Phase 3 and Phase 4,
+   [ADR 0029](../decisions/0029-defer-episodic-memory-and-summarize-compaction.md)).
+
+**Carried forward from Phase 2** (none block Phase 3): a hosted grounded deployment (new agent
+version or second agent, search endpoint and labels settings, Search Index Data Reader for the
+agent identity, each needing approval); a larger relevance set to re-check the provisional 0.625
+cutoff; extraction quality on real documents; answer faithfulness (Phase 4).
+
+## Current Next Step
+
+Start **Phase 3: Durable Azure adapters**. The exit evidence is that in-memory and Azure adapters
+pass the same isolation, concurrency, expiry, deletion and replay tests. The ports already exist
+(`MemoryStore`, `RunStateStore`, `ArtifactStore`, `ProposalStore`, `CheckpointStore`,
+`ApprovalProvider`, `IdempotencyLedger`, `AuditSink`), so the work follows the pattern used for
+Azure AI Search: contract first, local first, then the cloud. In order:
+
+1. **Decide the storage design** in an ADR: which ports get Cosmos DB, Blob Storage or neither,
+   the partition and key scheme that keeps tenant and user scope structural, optimistic
+   concurrency from `expected_version`, expiry and deletion, and what is deliberately left
+   in memory.
+2. **Shared conformance suite** for the state ports, run first over the existing in-memory
+   implementations, covering isolation, concurrency, expiry, deletion and replay.
+3. **Cosmos DB adapter behind a small backend port**, with a fake backend and mutation checks,
+   as for Azure AI Search. No cloud resource is created in this step.
+4. **Live validation** on the cheapest Cosmos tier with keyless Entra access, in a dedicated
+   resource group, only after separate approval of the resource, its cost and the role grants.
+5. Blob artifacts, durable audit and retention, then episodic memory (ADR 0029).
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

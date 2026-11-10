@@ -522,9 +522,12 @@ Azure AI Search: contract first, local first, then the cloud. In order:
    backend port). The shared suite passes over both the in-memory stores and the Cosmos stores on
    a fake backend (40 tests), and 35 of 35 mutants were caught. No cloud resource was created.
    The REST backend that talks to Cosmos is part of step 4.
-4. **REST backend and live validation** on the cheapest Cosmos tier with keyless Entra access, in
-   a dedicated resource group, only after separate approval of the resource, its cost and the
-   role grants. `azure-cosmos` still cannot be downloaded here, so the backend is stdlib REST.
+4. **REST backend and infrastructure** (written and tested locally: `cosmos_rest.py`,
+   `infra/cosmos.bicep`, `main.json` regenerated; the shared suite also passes through the REST
+   backend on a fake HTTP layer, 38 of 38 mutants caught, Search and Cosmos now share one retry
+   helper). **Live validation is next** on the cheapest Cosmos tier with keyless Entra access, in a
+   dedicated resource group, only after separate approval of the resource, its cost and the role
+   grants. `azure-cosmos` still cannot be downloaded here, so the backend is stdlib REST.
 5. Retention settings, then episodic memory (ADR 0029).
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching

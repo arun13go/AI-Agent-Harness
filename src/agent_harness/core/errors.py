@@ -57,6 +57,12 @@ class ExtractionError(HarnessError):
     code = "extraction_error"
 
 
+class StorageError(HarnessError):
+    """A durable store could not complete a request; the message carries no stored data."""
+
+    code = "storage_error"
+
+
 class ContextBudgetError(ExecutionLimitError):
     """Mandatory context (instructions and the current request) cannot fit the budget."""
 

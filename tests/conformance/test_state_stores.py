@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from agent_harness.adapters.storage.cosmos_rest import CosmosRestBackend
 from agent_harness.adapters.storage.cosmos_stores import (
     CosmosApprovalProvider,
     CosmosArtifactStore,
@@ -23,6 +24,7 @@ from agent_harness.adapters.storage.cosmos_stores import (
     CosmosIdempotencyLedger,
     CosmosProposalStore,
     CosmosRunStateStore,
+    DocumentBackend,
 )
 from agent_harness.adapters.storage.in_memory_action_stores import (
     InMemoryApprovalProvider,
@@ -65,7 +67,9 @@ from agent_harness.core.types import (
     RunStatus,
     ToolResult,
 )
+from tests.conformance.fake_cosmos_http import FakeCosmosHttp
 from tests.conformance.fake_documents import FakeDocumentBackend
+from tests.conformance.test_azure_search_rest import Credential
 from tests.core.test_governance import make_context, make_event
 
 NOW = datetime(2026, 11, 3, 10, 0, tzinfo=UTC)
@@ -86,7 +90,24 @@ class Stores:
     idempotency: IdempotencyLedger
 
 
-@pytest.fixture(params=["in-memory", "cosmos-fake"])
+DOCUMENT_ADAPTERS = ["cosmos-fake", "cosmos-rest-fake"]
+
+
+def document_backend(adapter: str, unique_field: str | None = None) -> DocumentBackend:
+    """A fake document store, directly or behind the real REST backend."""
+
+    if adapter == "cosmos-fake":
+        return FakeDocumentBackend(unique_field)
+    return CosmosRestBackend(
+        endpoint="https://acct-test.documents.azure.com",
+        database="harness",
+        container="records",
+        credential=Credential(),
+        opener=FakeCosmosHttp(unique_field),  # pyright: ignore[reportArgumentType]
+    )
+
+
+@pytest.fixture(params=["in-memory", *DOCUMENT_ADAPTERS])
 def stores(request: pytest.FixtureRequest) -> Stores:
     if request.param == "in-memory":
         return Stores(
@@ -97,7 +118,7 @@ def stores(request: pytest.FixtureRequest) -> Stores:
             InMemoryApprovalProvider(),
             InMemoryIdempotencyLedger(),
         )
-    backend = FakeDocumentBackend()
+    backend = document_backend(request.param)
     return Stores(
         CosmosArtifactStore(backend),
         CosmosProposalStore(backend),
@@ -114,7 +135,7 @@ class Audit:
     recorded: Callable[[], Awaitable[list[tuple[str, int, str]]]]
 
 
-@pytest.fixture(params=["in-memory", "cosmos-fake"])
+@pytest.fixture(params=["in-memory", *DOCUMENT_ADAPTERS])
 def audit(request: pytest.FixtureRequest) -> Audit:
     """The sink, and a reader of (run id, sequence, event id) for every event it holds."""
 
@@ -125,7 +146,7 @@ def audit(request: pytest.FixtureRequest) -> Audit:
             return [(e.context.run_id, e.sequence, e.event_id) for e in memory.events]
 
         return Audit(memory, from_memory)
-    backend = FakeDocumentBackend(unique_field="eventId")
+    backend = document_backend(request.param, unique_field="eventId")
 
     async def from_backend() -> list[tuple[str, int, str]]:
         documents = [

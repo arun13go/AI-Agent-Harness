@@ -44,8 +44,22 @@
   bounded batches. No cross-partition delete.
 - **Access.** Entra only (`disableLocalAuth`). The agent identity gets the built-in data
   contributor role on `records` and a custom create-and-read role on `audit`.
-- **Opt-in infrastructure.** `infra/cosmos.bicep`, parameter `cosmosSku` default `none`; `free`
-  (one free-tier account per subscription) or `serverless`. `azd up` is unchanged.
+- **Opt-in infrastructure.** `infra/cosmos.bicep`, wired into `main.bicep` as `cosmosSku`
+  (`none` by default, `free` or `serverless`) and `cosmosAuditRetentionDays` (default 90, to be
+  confirmed). It shares the optional resource group with search. `free` gives the one free-tier
+  account per subscription at 400 shared RU/s; `serverless` has no throughput setting. Payload is
+  excluded from the index. `azd up` is unchanged, and outputs are `AZURE_COSMOS_ENDPOINT` and
+  `AZURE_COSMOS_NAME`.
+- **Data roles.** The template defines `harness-audit-append` (read metadata, create, read, query;
+  no replace, upsert or delete). Assignments are made outside the template, as for Search: the
+  built-in Data Contributor on the account for the operator, and `harness-audit-append` on the
+  audit container for the agent identity. Cosmos RBAC has no deny rule, so the role lists only what
+  is allowed.
+- **REST backend.** `cosmos_rest.py` sends `type=aad&ver=1.0&sig=<token>` with scope
+  `https://<account>.documents.azure.com/.default`, a tenant partition key header and the ETag in
+  `If-Match`. It retries 429, 503 and a rejected token through the helper shared with Search
+  (`http_support.py`). Reads and queries also retry network failures. Creates and replaces do not,
+  because a retried write that had already succeeded would look like a conflict.
 - **Conformance.** One shared suite (isolation, concurrency, duplicate delivery, expiry, deletion,
   append-only order) runs over the in-memory stores, then a fake backend, then live Cosmos.
 

@@ -86,6 +86,8 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
         "searchResourceGroupName",
         "searchSemanticSearch",
         "documentIntelligenceSku",
+        "cosmosSku",
+        "cosmosAuditRetentionDays",
     }
 
     assert set(template["resources"]) == {
@@ -97,7 +99,29 @@ def test_generated_template_preserves_existing_project_and_limits_new_resources(
         "searchInOwnGroup",
         "documentIntelligence",
         "documentIntelligenceInOwnGroup",
+        "cosmos",
     }
+    assert template["parameters"]["cosmosSku"]["defaultValue"] == "none"
+    assert template["parameters"]["cosmosSku"]["allowedValues"] == ["none", "free", "serverless"]
+    assert template["resources"]["cosmos"]["condition"] == (
+        "[not(equals(parameters('cosmosSku'), 'none'))]"
+    )
+    cosmos = template["resources"]["cosmos"]["properties"]["template"]["resources"]
+    [account] = [r for r in cosmos if r["type"] == "Microsoft.DocumentDB/databaseAccounts"]
+    assert account["properties"]["disableLocalAuth"] is True
+    containers = {
+        c["properties"]["resource"]["id"]: c["properties"]["resource"]
+        for c in cosmos
+        if c["type"].endswith("/containers")
+    }
+    assert set(containers) == {"records", "audit"}
+    for container in containers.values():
+        assert container["partitionKey"]["paths"] == ["/tenantScope"]
+    assert containers["audit"]["uniqueKeyPolicy"]["uniqueKeys"] == [{"paths": ["/eventId"]}]
+    audit_role = next(r for r in cosmos if r["type"].endswith("/sqlRoleDefinitions"))
+    actions = audit_role["properties"]["permissions"][0]["dataActions"]
+    assert not any(action.endswith(("replace", "upsert", "delete", "*")) for action in actions)
+    assert {"AZURE_COSMOS_ENDPOINT", "AZURE_COSMOS_NAME"} <= set(template["outputs"])
     assert template["parameters"]["searchServiceSku"]["defaultValue"] == "none"
     assert template["parameters"]["documentIntelligenceSku"]["defaultValue"] == "none"
     assert template["parameters"]["documentIntelligenceSku"]["allowedValues"] == [

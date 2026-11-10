@@ -39,7 +39,7 @@ param registrationConfig RegistrationConfig?
 ])
 param searchServiceSku string = 'none'
 
-@description('Resource group for the optional resources (search and document extraction). Empty reuses resourceGroupName; any other name is created by this template so an experiment can be removed by deleting that group.')
+@description('Resource group for the optional resources (search, document extraction and Cosmos DB). Empty reuses resourceGroupName; any other name is created by this template so an experiment can be removed by deleting that group.')
 param searchResourceGroupName string = ''
 
 @description('Semantic ranker plan for the search service.')
@@ -57,7 +57,19 @@ param searchSemanticSearch string = 'disabled'
 ])
 param documentIntelligenceSku string = 'none'
 
-var useOwnGroup = (searchServiceSku != 'none' || documentIntelligenceSku != 'none') && !empty(searchResourceGroupName) && searchResourceGroupName != resourceGroupName
+@description('Opt-in Azure Cosmos DB account for durable run state and audit events. "none" creates nothing; "free" uses the one free-tier account per subscription (development only); "serverless" bills per request.')
+@allowed([
+  'none'
+  'free'
+  'serverless'
+])
+param cosmosSku string = 'none'
+
+@description('Days before audit events expire in the optional Cosmos DB account.')
+@minValue(1)
+param cosmosAuditRetentionDays int = 90
+
+var useOwnGroup = (searchServiceSku != 'none' || documentIntelligenceSku != 'none' || cosmosSku != 'none') && !empty(searchResourceGroupName) && searchResourceGroupName != resourceGroupName
 var searchTags = {
   'azd-env-name': environmentName
   'azd-service-name': 'harness'
@@ -115,6 +127,20 @@ module documentIntelligenceInOwnGroup './document-intelligence.bicep' = if (docu
   }
 }
 
+module cosmos './cosmos.bicep' = if (cosmosSku != 'none') {
+  scope: resourceGroup(useOwnGroup ? searchResourceGroupName : resourceGroupName)
+  dependsOn: [
+    searchGroup
+  ]
+  params: {
+    name: 'cosmos-harness-${uniqueString(subscription().id, useOwnGroup ? searchResourceGroupName : resourceGroupName)}'
+    location: location
+    tags: searchTags
+    sku: cosmosSku == 'serverless' ? 'serverless' : 'free'
+    auditRetentionDays: cosmosAuditRetentionDays
+  }
+}
+
 module registry './registry.bicep' = {
   scope: existingGroup
   params: {
@@ -162,3 +188,5 @@ output AZURE_SEARCH_ENDPOINT string = (searchServiceSku != 'none' && useOwnGroup
 output AZURE_SEARCH_SERVICE_NAME string = (searchServiceSku != 'none' && useOwnGroup) ? searchInOwnGroup!.outputs.name : (searchServiceSku != 'none' ? search!.outputs.name : '')
 output AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT string = (documentIntelligenceSku != 'none' && useOwnGroup) ? documentIntelligenceInOwnGroup!.outputs.endpoint : (documentIntelligenceSku != 'none' ? documentIntelligence!.outputs.endpoint : '')
 output AZURE_DOCUMENT_INTELLIGENCE_NAME string = (documentIntelligenceSku != 'none' && useOwnGroup) ? documentIntelligenceInOwnGroup!.outputs.name : (documentIntelligenceSku != 'none' ? documentIntelligence!.outputs.name : '')
+output AZURE_COSMOS_ENDPOINT string = cosmosSku != 'none' ? cosmos!.outputs.endpoint : ''
+output AZURE_COSMOS_NAME string = cosmosSku != 'none' ? cosmos!.outputs.name : ''

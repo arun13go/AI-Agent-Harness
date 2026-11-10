@@ -4,6 +4,15 @@
 
 Build a reusable, production-oriented agent harness template that customers can clone, configure, deploy to their Azure tenant, and extend without replacing its governance and evaluation controls.
 
+## Core Requirement: Lightweight by Design
+
+Keep the harness light: less code, fewer parts, a small default footprint, and short but clear documentation ([ADR 0031](docs/decisions/0031-lightweight-by-design.md)). Mandatory governance controls are never traded for lightness.
+
+- Prefer a released SDK or platform capability over new code; add code, services, dependencies, flags or abstractions only for a need stated in an ADR.
+- Refuse reserved or speculative options at load instead of half-building them; delete dead or duplicated code in the same change.
+- Keep `azd up` minimal; every other Azure resource is opt-in and off by default.
+- Keep ADRs to about one page (decision, reason, evidence, limits, not built) and replies and pull-request text brief, without dropping a decision, limit or evidence.
+
 This project was built with the microsoft-foundry skill. Before working on or answering questions
 about Foundry agents, read the microsoft-foundry skill first.
 

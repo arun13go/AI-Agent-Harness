@@ -11,6 +11,8 @@ adapter expectations.
 ## Delivery Rules
 
 - Build thin, testable increments.
+- Keep the harness lightweight: less code, fewer parts, opt-in cloud resources
+  ([ADR 0031](../decisions/0031-lightweight-by-design.md)).
 - Keep local policy tests independent of Azure.
 - Use released MAF capabilities instead of creating another agent runtime.
 - Record architecture changes in ADRs.
@@ -511,17 +513,15 @@ pass the same isolation, concurrency, expiry, deletion and replay tests. The por
 `ApprovalProvider`, `IdempotencyLedger`, `AuditSink`), so the work follows the pattern used for
 Azure AI Search: contract first, local first, then the cloud. In order:
 
-1. **Decide the storage design** in an ADR: which ports get Cosmos DB, Blob Storage or neither,
-   the partition and key scheme that keeps tenant and user scope structural, optimistic
-   concurrency from `expected_version`, expiry and deletion, and what is deliberately left
-   in memory.
+1. **Storage design** (done: [ADR 0032](../decisions/0032-phase-3-storage-design.md)): Cosmos DB
+   only, two containers, `/tenantScope` partition, no Blob or cache.
 2. **Shared conformance suite** for the state ports, run first over the existing in-memory
-   implementations, covering isolation, concurrency, expiry, deletion and replay.
-3. **Cosmos DB adapter behind a small backend port**, with a fake backend and mutation checks,
-   as for Azure AI Search. No cloud resource is created in this step.
+   implementations (isolation, concurrency, expiry, deletion, replay, append-only order).
+3. **Cosmos adapters** on a five-method backend port, with a fake backend and mutation checks.
+   No cloud resource is created in this step.
 4. **Live validation** on the cheapest Cosmos tier with keyless Entra access, in a dedicated
    resource group, only after separate approval of the resource, its cost and the role grants.
-5. Blob artifacts, durable audit and retention, then episodic memory (ADR 0029).
+5. Retention settings, then episodic memory (ADR 0029).
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

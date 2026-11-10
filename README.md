@@ -284,6 +284,9 @@ Azure deployment, then collect live Inspector and cloud trace evidence.
 
 ## Product boundary
 
+The harness is lightweight by design: little code, few moving parts, opt-in Azure resources and short
+documents that still state every decision and limit ([ADR 0031](docs/decisions/0031-lightweight-by-design.md)).
+
 Version 1.0 is cloud-first and Python-based. Azure Dev is the reference integration environment.
 Local development supports editing and deterministic tests; it does not host model inference.
 Foundry-specific behavior stays behind explicit adapters, and another runtime or provider must pass

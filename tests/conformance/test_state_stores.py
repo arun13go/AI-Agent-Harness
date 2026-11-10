@@ -8,13 +8,22 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from agent_harness.adapters.storage.cosmos_stores import (
+    CosmosApprovalProvider,
+    CosmosArtifactStore,
+    CosmosAuditSink,
+    CosmosCheckpointStore,
+    CosmosIdempotencyLedger,
+    CosmosProposalStore,
+    CosmosRunStateStore,
+)
 from agent_harness.adapters.storage.in_memory_action_stores import (
     InMemoryApprovalProvider,
     InMemoryArtifactStore,
@@ -27,6 +36,7 @@ from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.core.contracts import (
     ApprovalProvider,
     ArtifactStore,
+    AuditSink,
     CheckpointStore,
     IdempotencyLedger,
     ProposalStore,
@@ -55,6 +65,7 @@ from agent_harness.core.types import (
     RunStatus,
     ToolResult,
 )
+from tests.conformance.fake_documents import FakeDocumentBackend
 from tests.core.test_governance import make_context, make_event
 
 NOW = datetime(2026, 11, 3, 10, 0, tzinfo=UTC)
@@ -75,23 +86,56 @@ class Stores:
     idempotency: IdempotencyLedger
 
 
-@pytest.fixture(params=["in-memory"])
+@pytest.fixture(params=["in-memory", "cosmos-fake"])
 def stores(request: pytest.FixtureRequest) -> Stores:
-    del request
+    if request.param == "in-memory":
+        return Stores(
+            InMemoryArtifactStore(),
+            InMemoryProposalStore(),
+            InMemoryCheckpointStore(),
+            InMemoryRunStateStore(),
+            InMemoryApprovalProvider(),
+            InMemoryIdempotencyLedger(),
+        )
+    backend = FakeDocumentBackend()
     return Stores(
-        InMemoryArtifactStore(),
-        InMemoryProposalStore(),
-        InMemoryCheckpointStore(),
-        InMemoryRunStateStore(),
-        InMemoryApprovalProvider(),
-        InMemoryIdempotencyLedger(),
+        CosmosArtifactStore(backend),
+        CosmosProposalStore(backend),
+        CosmosCheckpointStore(backend),
+        CosmosRunStateStore(backend),
+        CosmosApprovalProvider(backend),
+        CosmosIdempotencyLedger(backend),
     )
 
 
-@pytest.fixture(params=["in-memory"])
-def audit(request: pytest.FixtureRequest) -> Any:
-    del request
-    return InMemoryAuditSink(EVENT_SCHEMA)
+@dataclass(frozen=True)
+class Audit:
+    sink: AuditSink
+    recorded: Callable[[], Awaitable[list[tuple[str, int, str]]]]
+
+
+@pytest.fixture(params=["in-memory", "cosmos-fake"])
+def audit(request: pytest.FixtureRequest) -> Audit:
+    """The sink, and a reader of (run id, sequence, event id) for every event it holds."""
+
+    if request.param == "in-memory":
+        memory = InMemoryAuditSink(EVENT_SCHEMA)
+
+        async def from_memory() -> list[tuple[str, int, str]]:
+            return [(e.context.run_id, e.sequence, e.event_id) for e in memory.events]
+
+        return Audit(memory, from_memory)
+    backend = FakeDocumentBackend(unique_field="eventId")
+
+    async def from_backend() -> list[tuple[str, int, str]]:
+        documents = [
+            d
+            for tenant in (OWNER.tenant_scope, OUTSIDER.tenant_scope)
+            for d in await backend.find(tenant, kind="audit")
+        ]
+        return [(d["runId"], d["payload"]["sequence"], d["eventId"]) for d in documents]
+
+    return Audit(CosmosAuditSink(backend, EVENT_SCHEMA), from_backend)
 
 
 def context(identity: IdentityScope, run_id: str = "run-00000001") -> RequestContext:
@@ -250,6 +294,19 @@ async def test_a_claim_completes_once_and_keeps_its_proposal_binding(stores: Sto
         await stores.idempotency.claim(done(claim()))
 
 
+@pytest.mark.asyncio
+async def test_a_claim_completes_once_even_when_completed_concurrently(stores: Stores) -> None:
+    await stores.idempotency.claim(claim())
+
+    outcomes = await asyncio.gather(
+        stores.idempotency.complete(done(claim())),
+        stores.idempotency.complete(done(claim())),
+        return_exceptions=True,
+    )
+
+    assert sorted(type(o).__name__ for o in outcomes) == ["ConcurrencyError", "NoneType"]
+
+
 def approval_request(approval_id: str = "appr-1") -> ApprovalRequest:
     return ApprovalRequest(approval_id, context(OWNER), "prop-1", "digest-1", "tool", LATER)
 
@@ -286,7 +343,8 @@ async def test_an_approval_is_requested_once_and_decided_once_by_a_tenant_member
 
 @pytest.mark.asyncio
 async def test_an_approval_is_visible_only_to_its_tenant_and_proposer(stores: Stores) -> None:
-    await stores.approval.request(approval_request())
+    request = approval_request()
+    await stores.approval.request(request)
     await stores.approval.decide(decision())
 
     assert await stores.approval.get(identity=COLLEAGUE, approval_id="appr-1") is None
@@ -295,7 +353,7 @@ async def test_an_approval_is_visible_only_to_its_tenant_and_proposer(stores: St
         await stores.approval.get_request(tenant_scope="tenant-0002", approval_id="appr-1") is None
     )
     found = await stores.approval.get_request(tenant_scope="tenant-0001", approval_id="appr-1")
-    assert found == approval_request()
+    assert found == request
 
 
 @pytest.mark.asyncio
@@ -322,34 +380,57 @@ async def test_a_decision_that_does_not_match_its_request_is_refused(
 
 
 @pytest.mark.asyncio
-async def test_audit_assigns_gapless_sequences_under_concurrency(audit: Any) -> None:
-    run = context(OWNER)
+async def test_audit_refuses_an_event_that_breaks_the_schema_and_records_nothing(
+    audit: Audit,
+) -> None:
+    with pytest.raises(AuditError):
+        await audit.sink.append(make_event(0, attributes={"prompt": "business text"}))
 
-    await asyncio.gather(
-        *(audit.append_next(make_event(event_id=f"event-{i:06d}", context=run)) for i in range(20))
-    )
-
-    assert sorted(e.sequence for e in audit.events) == list(range(20))
-    assert len({e.event_id for e in audit.events}) == 20
+    assert await audit.recorded() == []
 
 
 @pytest.mark.asyncio
-async def test_audit_is_append_only_ordered_and_bound_to_one_run_identity(audit: Any) -> None:
+async def test_audit_assigns_gapless_sequences_under_concurrency(audit: Audit) -> None:
     run = context(OWNER)
-    await audit.append(make_event(0, event_id="event-000001", context=run))
+
+    await asyncio.gather(
+        *(
+            audit.sink.append_next(make_event(event_id=f"event-{i:06d}", context=run))
+            for i in range(20)
+        )
+    )
+
+    recorded = await audit.recorded()
+    assert sorted(sequence for _, sequence, _ in recorded) == list(range(20))
+    assert len({event_id for _, _, event_id in recorded}) == 20
+
+
+@pytest.mark.asyncio
+async def test_audit_is_append_only_ordered_and_bound_to_one_run_identity(audit: Audit) -> None:
+    run = context(OWNER)
+    await audit.sink.append(make_event(0, event_id="event-000001", context=run))
 
     with pytest.raises(DuplicateEventError):
-        await audit.append(make_event(1, event_id="event-000001", context=run))
+        await audit.sink.append(make_event(1, event_id="event-000001", context=run))
+    with pytest.raises(DuplicateEventError):
+        await audit.sink.append(make_event(0, event_id="event-000001", context=run))
     for sequence in (0, 2):
         with pytest.raises(EventSequenceError):
-            await audit.append(make_event(sequence, event_id="event-000002", context=run))
+            await audit.sink.append(make_event(sequence, event_id="event-000002", context=run))
     with pytest.raises(AuditError):
-        await audit.append(make_event(1, event_id="event-000003", context=context(COLLEAGUE)))
-    await audit.append(make_event(1, event_id="event-000004", context=run))
+        await audit.sink.append(make_event(1, event_id="event-000003", context=context(COLLEAGUE)))
+    await audit.sink.append(make_event(1, event_id="event-000004", context=run))
+    for changed in (
+        replace(run, correlation_id="correlation-other"),
+        replace(run, trace_id="f" * 32),
+    ):
+        with pytest.raises(AuditError):
+            await audit.sink.append(make_event(2, event_id="event-000006", context=changed))
     other = context(OUTSIDER, "run-00000002")
-    await audit.append(make_event(0, event_id="event-000005", context=other))
+    await audit.sink.append(make_event(0, event_id="event-000005", context=other))
 
-    assert [(e.context.run_id, e.sequence) for e in audit.events] == [
+    recorded = await audit.recorded()
+    assert sorted((run_id, sequence) for run_id, sequence, _ in recorded) == [
         ("run-00000001", 0),
         ("run-00000001", 1),
         ("run-00000002", 0),

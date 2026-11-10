@@ -42,20 +42,39 @@ def run_event_to_dict(event: RunEvent) -> dict[str, JsonValue]:
     return value
 
 
+def load_event_validator(schema_path: Path) -> Draft202012Validator:
+    """Load the run-event JSON Schema validator."""
+
+    try:
+        with schema_path.open(encoding="utf-8") as stream:
+            schema = json.load(stream)
+    except (OSError, json.JSONDecodeError) as error:
+        raise AuditError(f"Cannot load run-event schema '{schema_path}': {error}") from error
+    if not isinstance(schema, dict):
+        raise AuditError(f"Run-event schema '{schema_path}' must contain a JSON object")
+    return Draft202012Validator(cast(dict[str, JsonValue], schema), format_checker=FormatChecker())
+
+
+def validate_event(validator: Draft202012Validator, event: RunEvent) -> None:
+    """Raise ``AuditError`` unless the event matches the run-event schema."""
+
+    errors = sorted(
+        validator.iter_errors(run_event_to_dict(event)),
+        key=lambda error: list(error.absolute_path),
+    )
+    if errors:
+        details = "; ".join(
+            f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: {error.message}"
+            for error in errors
+        )
+        raise AuditError(f"Run event failed schema validation: {details}")
+
+
 class InMemoryAuditSink:
     """Append ordered, correlated events after schema validation."""
 
     def __init__(self, schema_path: Path) -> None:
-        try:
-            with schema_path.open(encoding="utf-8") as stream:
-                schema = json.load(stream)
-        except (OSError, json.JSONDecodeError) as error:
-            raise AuditError(f"Cannot load run-event schema '{schema_path}': {error}") from error
-        if not isinstance(schema, dict):
-            raise AuditError(f"Run-event schema '{schema_path}' must contain a JSON object")
-
-        typed_schema = cast(dict[str, JsonValue], schema)
-        self._validator = Draft202012Validator(typed_schema, format_checker=FormatChecker())
+        self._validator = load_event_validator(schema_path)
         self._events: list[RunEvent] = []
         self._event_ids: set[str] = set()
         self._next_sequence: dict[str, int] = {}
@@ -102,17 +121,7 @@ class InMemoryAuditSink:
         if existing_context is not None and existing_context != run_context:
             raise AuditError(f"Run '{event.context.run_id}' cannot change identity or correlation")
 
-        validation_errors = sorted(
-            self._validator.iter_errors(run_event_to_dict(event)),
-            key=lambda error: list(error.absolute_path),
-        )
-        if validation_errors:
-            details = "; ".join(
-                f"{'.'.join(str(part) for part in error.absolute_path) or '<root>'}: "
-                f"{error.message}"
-                for error in validation_errors
-            )
-            raise AuditError(f"Run event failed schema validation: {details}")
+        validate_event(self._validator, event)
 
         self._events.append(event)
         self._event_ids.add(event.event_id)

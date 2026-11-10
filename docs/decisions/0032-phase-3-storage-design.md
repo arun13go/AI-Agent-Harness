@@ -16,8 +16,8 @@
   every lookup a point read.
 - **Structural scoping.** A document's `id` is the SHA-256 of kind, subject scope and record id, so
   a read with the wrong subject finds nothing. Approvals hash tenant and approval id only, and
-  reads then check identity as the in-memory store does. The typed record is stored whole, with
-  `kind`, `tenantScope`, `subjectScope`, integer `version` and `ttl`.
+  reads then check identity as the in-memory store does. The typed record is stored whole as
+  `payload`, with `kind`, `tenantScope` and, for records that expire, `ttl`.
 - **Port to operation.**
 
   | Port | Operations |
@@ -28,12 +28,16 @@
   | Approval | request is create; decision is a second document, so a repeat conflicts |
   | Audit | create with id `run:sequence`, so a duplicate sequence conflicts; unique key on `/eventId` rejects duplicate events |
 
-  `append_next` takes the next sequence from a per-run cache, falling back to a max-sequence query
-  in the partition, and retries once on conflict.
-- **One backend port, five methods** (create, read, replace with ETag, delete, query in a
-  partition). One Cosmos class implements it and one module builds every store on it, so Cosmos
-  details live in one place. Use `azure-cosmos` if it can be locked and installed; otherwise a
-  small REST client, as for Search (ADR 0023). The in-memory stores stay as they are.
+  `append_next` takes the next sequence from a count of the run's events (a query in the
+  partition), under a per-run lock, and retries once on conflict. It does not cache sequences.
+  A duplicate event id conflicts on the unique key; the adapter reads the sequence slot to tell it
+  from a taken sequence.
+- **One backend port, four methods** (create, read, replace with ETag, find in a partition).
+  `delete` joins it with the memory store (ADR 0029), which is the first thing that deletes. One
+  module, `cosmos_stores.py`, builds every store on it, so Cosmos details live in one place. The
+  stored JSON is built with pydantic's `TypeAdapter`, so there is no hand-written codec. Use
+  `azure-cosmos` if it can be locked and installed; otherwise a small REST client, as for Search
+  (ADR 0023). The in-memory stores stay as they are.
 - **Expiry and deletion.** `ttl` reclaims space only. Code still enforces `expires_at` on read.
   Records expire a fixed grace after their own expiry; audit retention is a deployment setting
   (default 90 days, to be confirmed). Tenant deletion queries the partition and deletes in

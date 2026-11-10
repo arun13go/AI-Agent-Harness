@@ -515,8 +515,9 @@ Azure AI Search: contract first, local first, then the cloud. In order:
 
 1. **Storage design** (done: [ADR 0032](../decisions/0032-phase-3-storage-design.md)): Cosmos DB
    only, two containers, `/tenantScope` partition, no Blob or cache.
-2. **Shared conformance suite** for the state ports, run first over the existing in-memory
-   implementations (isolation, concurrency, expiry, deletion, replay, append-only order).
+2. **Shared conformance suite** (done: `tests/conformance/test_state_stores.py`, 16 tests, 26 of 26
+   mutants caught): isolation, optimistic concurrency, replay and audit order over the in-memory
+   stores. A new adapter adds one fixture param. Expiry and deletion wait for the memory store.
 3. **Cosmos adapters** on a five-method backend port, with a fake backend and mutation checks.
    No cloud resource is created in this step.
 4. **Live validation** on the cheapest Cosmos tier with keyless Entra access, in a dedicated

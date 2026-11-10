@@ -19,6 +19,7 @@ from agent_harness.app.grounded_executor import (
     GROUNDED_INSTRUCTION,
     MAXIMUM_QUESTION_CHARACTERS,
     GroundedExecutor,
+    GroundedStreamPart,
     create_grounded_executor,
 )
 from agent_harness.core.configuration import HarnessConfig, load_harness_config
@@ -38,7 +39,11 @@ from agent_harness.core.types import (
     Message,
     RetrievedItem,
 )
-from tests.adapters.maf.test_agent_executor import FailingClient, make_context
+from tests.adapters.maf.test_agent_executor import (
+    FailingClient,
+    ScriptedStreamingClient,
+    make_context,
+)
 from tests.conformance.fixtures import IDENTITY_A, NOW, TENANT_B, make_evidence
 from tests.conformance.test_context_policy import RecordingClient
 
@@ -135,6 +140,7 @@ def build(
     route: str = "abstain",
     max_input_tokens: int = 64000,
     maximum_retrieval_attempts: int = 1,
+    label_resolver: object | None = None,
 ) -> tuple[GroundedExecutor, InMemoryAuditSink, RecordingClient]:
     config = load_config(tmp_path, route=route, max_input_tokens=max_input_tokens)
     audit = InMemoryAuditSink(EVENT_SCHEMA)
@@ -152,6 +158,7 @@ def build(
         audit_sink=audit,
         maximum_retrieval_attempts=maximum_retrieval_attempts,
         clock=lambda: NOW,
+        label_resolver=label_resolver,  # type: ignore[arg-type]
     )
     return executor, audit, recorder
 
@@ -160,7 +167,7 @@ async def ask(
     executor: GroundedExecutor,
     *,
     question: str = QUESTION,
-    labels: Sequence[str] = LABELS,
+    labels: Sequence[str] | None = LABELS,
     history: Sequence[Message] = (),
 ):
     context = make_context()
@@ -567,6 +574,245 @@ async def test_history_is_kept_ahead_of_the_current_question(tmp_path: Path) -> 
     sent = [message.text for message in client.requests[0]]
     assert "HISTORY-MARKER" in sent[0]
     assert QUESTION in sent[-1]
+
+
+class FixedLabels:
+    def __init__(self, labels: Sequence[str] = LABELS) -> None:
+        self.calls = 0
+        self._labels = tuple(labels)
+
+    async def resolve(self, identity: IdentityScope) -> Sequence[str]:
+        del identity
+        self.calls += 1
+        return self._labels
+
+
+class FailingLabels:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def resolve(self, identity: IdentityScope) -> Sequence[str]:
+        del identity
+        raise self._error
+
+
+class LabelSpy:
+    def __init__(self) -> None:
+        self.labels: list[tuple[str, ...]] = []
+
+    async def retrieve(
+        self,
+        *,
+        identity: IdentityScope,
+        authorization_labels: Sequence[str],
+        query: str,
+        limit: int,
+    ) -> Sequence[RetrievedItem]:
+        del identity, query, limit
+        self.labels.append(tuple(authorization_labels))
+        return ()
+
+
+async def collect(executor: GroundedExecutor, **kwargs: object) -> list[GroundedStreamPart]:
+    return [
+        part
+        async for part in executor.stream(
+            authenticated_identity=IDENTITY_A,
+            context=make_context(),
+            question=kwargs.pop("question", QUESTION),  # type: ignore[arg-type]
+            **kwargs,  # type: ignore[arg-type]
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_resolved_labels_reach_retrieval_and_only_their_count_is_audited(
+    tmp_path: Path,
+) -> None:
+    spy = LabelSpy()
+    resolver = FixedLabels(("group:secret-ops",))
+    executor, audit, _ = build(tmp_path, retrieval=spy, label_resolver=resolver)
+
+    await ask(executor, labels=None)
+
+    assert spy.labels == [("group:secret-ops",)] * 2
+    assert resolver.calls == 1
+    assert attributes(audit, "retrieval.completed")["callerLabelCount"] == 1
+    assert_audit_has_no_payload(audit, "group:secret-ops")
+
+
+@pytest.mark.asyncio
+async def test_an_empty_resolved_label_set_is_allowed_and_audited_as_zero(tmp_path: Path) -> None:
+    spy = LabelSpy()
+    executor, audit, _ = build(tmp_path, retrieval=spy, label_resolver=FixedLabels(()))
+
+    await ask(executor, labels=None)
+
+    assert spy.labels[0] == ()
+    assert attributes(audit, "retrieval.completed")["callerLabelCount"] == 0
+
+
+@pytest.mark.asyncio
+async def test_explicit_empty_labels_are_used_as_given_without_a_resolver(tmp_path: Path) -> None:
+    spy = LabelSpy()
+    executor, audit, _ = build(tmp_path, retrieval=spy)
+
+    await ask(executor, labels=())
+
+    assert spy.labels[0] == ()
+    assert attributes(audit, "retrieval.completed")["callerLabelCount"] == 0
+
+
+@pytest.mark.asyncio
+async def test_explicit_labels_are_counted_without_a_resolver(tmp_path: Path) -> None:
+    executor, audit, _ = build(tmp_path, [strong("alpha")])
+
+    await ask(executor)
+
+    assert attributes(audit, "retrieval.completed")["callerLabelCount"] == len(LABELS)
+
+
+@pytest.mark.asyncio
+async def test_labels_must_come_from_exactly_one_source(tmp_path: Path) -> None:
+    both, both_audit, _ = build(tmp_path, [strong("alpha")], label_resolver=FixedLabels())
+    neither, neither_audit, _ = build(tmp_path, [strong("alpha")])
+
+    with pytest.raises(ConfigurationError, match="either explicitly or through a resolver"):
+        await ask(both)
+    with pytest.raises(ConfigurationError, match="either explicitly or through a resolver"):
+        await ask(neither, labels=None)
+
+    assert both_audit.events == () and neither_audit.events == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("resolver", "code"),
+    [
+        (FailingLabels(RuntimeError("SECRET directory detail")), "authorization_error"),
+        (FailingLabels(ConfigurationError("labels unavailable")), "configuration_error"),
+        (FixedLabels(("bad label",)), "input_validation_error"),
+        (FixedLabels(tuple(f"g{i}" for i in range(65))), "input_validation_error"),
+    ],
+)
+async def test_label_resolution_failure_closes_the_run_before_retrieval(
+    tmp_path: Path, resolver: object, code: str
+) -> None:
+    spy = LabelSpy()
+    executor, audit, client = build(tmp_path, retrieval=spy, label_resolver=resolver)
+
+    with pytest.raises(Exception) as caught:
+        await ask(executor, labels=None)
+
+    assert "SECRET" not in str(caught.value)
+    assert event_types(audit) == ["run.started", "run.failed"]
+    assert attributes(audit, "run.failed") == {"errorCode": code}
+    assert spy.labels == [] and client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_stream_yields_ordered_deltas_then_one_final_outcome(tmp_path: Path) -> None:
+    executor, audit, _ = build(tmp_path, [strong("alpha", 0.95)], client=ScriptedStreamingClient())
+
+    parts = await collect(executor, authorization_labels=LABELS)
+
+    assert [part.delta for part in parts[:-1]] == ["API ", "is healthy."]
+    assert all(part.final is None for part in parts[:-1])
+    final = parts[-1].final
+    assert parts[-1].delta is None and final is not None
+    assert final.route is AnswerabilityRoute.ANSWER
+    assert final.message.content == "API is healthy."
+    assert final.included_evidence_ids == ("alpha",)
+    assert [citation.source_id for citation in final.citations] == ["source-alpha"]
+    assert final.model is not None
+    assert (final.model.usage.input_tokens, final.model.usage.output_tokens) == (3, 2)
+    assert (final.model.model_id, final.model.finish_reason) == ("fake-stream-model", "stop")
+    assert event_types(audit) == [
+        "run.started",
+        "retrieval.completed",
+        "model.requested",
+        "model.completed",
+        "run.completed",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_stream_non_answer_returns_fixed_text_without_a_model_call(tmp_path: Path) -> None:
+    executor, audit, client = build(tmp_path, [], client=ScriptedStreamingClient())
+
+    parts = await collect(executor, authorization_labels=LABELS)
+
+    assert len(parts) == 2
+    assert parts[0].delta == "I can't answer this from the evidence available to me."
+    final = parts[1].final
+    assert final is not None and final.model is None
+    assert final.route is AnswerabilityRoute.ABSTAIN
+    assert final.message.content == parts[0].delta
+    assert event_types(audit) == ["run.started", "retrieval.completed", "run.completed"]
+    assert client.requests == []
+
+
+@pytest.mark.asyncio
+async def test_stream_resolves_labels_like_run(tmp_path: Path) -> None:
+    spy = LabelSpy()
+    executor, audit, _ = build(
+        tmp_path,
+        retrieval=spy,
+        client=ScriptedStreamingClient(),
+        label_resolver=FixedLabels(("group:ops",)),
+    )
+
+    await collect(executor)
+
+    assert spy.labels[0] == ("group:ops",)
+    assert attributes(audit, "retrieval.completed")["callerLabelCount"] == 1
+
+
+@pytest.mark.asyncio
+async def test_stream_failure_before_the_model_closes_the_run_once(tmp_path: Path) -> None:
+    executor, audit, _ = build(
+        tmp_path,
+        retrieval=Exploding(RuntimeError("SECRET backend detail")),
+        client=ScriptedStreamingClient(),
+    )
+
+    with pytest.raises(RetrievalError):
+        await collect(executor, authorization_labels=LABELS)
+
+    assert event_types(audit) == ["run.started", "run.failed"]
+
+
+@pytest.mark.asyncio
+async def test_stream_refuses_a_runtime_that_cannot_stream_before_any_event(
+    tmp_path: Path,
+) -> None:
+    class RunOnly:
+        async def run(self, **_: object) -> object:
+            raise AssertionError("not called")
+
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    executor = create_grounded_executor(
+        config=load_config(tmp_path),
+        retrieval=InMemoryRetrievalProvider([strong("alpha")], clock=lambda: NOW),
+        runtime=RunOnly(),  # type: ignore[arg-type]
+        audit_sink=audit,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(ConfigurationError, match="does not support streaming"):
+        await collect(executor, authorization_labels=LABELS)
+
+    assert audit.events == ()
+
+
+@pytest.mark.asyncio
+async def test_stream_invalid_question_is_rejected_before_any_event(tmp_path: Path) -> None:
+    executor, audit, _ = build(tmp_path, [strong("alpha")], client=ScriptedStreamingClient())
+
+    with pytest.raises(InputValidationError):
+        await collect(executor, question="  ", authorization_labels=LABELS)
+
+    assert audit.events == ()
 
 
 def test_composition_refuses_unsupported_profiles_and_settings(tmp_path: Path) -> None:

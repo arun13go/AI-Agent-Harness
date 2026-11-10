@@ -25,7 +25,7 @@ adapter expectations.
 | 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Complete |
-| 2 | Grounded-assistant profile | In progress (grounded path on Azure AI Search, ingestion of Markdown, PDF and Word done; hosting and close-out decisions open) |
+| 2 | Grounded-assistant profile | In progress (grounded path on Azure AI Search, Markdown/PDF/Word ingestion and local HTTP hosting done; hosted deployment and close-out decisions open) |
 | 3 | Durable Azure adapters | Not started |
 | 4 | Evaluation and operations | Not started |
 | 5 | Deployment and CI hardening | Not started |
@@ -441,11 +441,13 @@ Continue **Phase 2: Grounding and context** from the completed retrieval, answer
 chunk-identity, bounded-context, local grounded-path, lexical-retrieval and relevance-baseline
 slices. Remaining, in order:
 
-1. **Authorization labels for hosting** (decided: [ADR 0021](../decisions/0021-caller-authorization-labels.md)).
-   Labels are a fixed set per agent endpoint from explicit deployment configuration, because the
-   platform supplies no claims or key lookup; per-user access control is not available and is
-   recorded as a limit. Wiring (the `CallerLabelResolver` port and hosted startup checks) happens
-   with hosting, which now follows the Azure AI Search adapter.
+1. **Authorization labels for hosting** (built: [ADR 0027](../decisions/0027-grounded-http-hosting.md),
+   decided in [ADR 0021](../decisions/0021-caller-authorization-labels.md)).
+   Labels are a fixed set per agent endpoint from explicit deployment configuration
+   (`HARNESS_CALLER_LABELS`, strict, fail-closed), because the platform supplies no claims or key
+   lookup; per-user access control is not available and is recorded as a limit. The grounded
+   profile is served over HTTP with streaming and verified on loopback against live Azure; a
+   hosted deployment is not done and needs its own approval.
 2. **Relevance baseline** (done: [ADR 0022](../decisions/0022-retrieval-relevance-baseline.md)).
    `eval-retrieval` is the comparison any new retrieval strategy, including the Azure adapter,
    must be scored with. Model-judged groundedness remains Phase 4.
@@ -457,13 +459,13 @@ slices. Remaining, in order:
    minimum score, limit, attempts and the index are now validated profile settings and the profile
    selects the adapter ([ADR 0024](../decisions/0024-retrieval-settings-as-profile-configuration.md)),
    confirmed by a profile-driven evaluation and the first live grounded run through Azure
-   retrieval and a Foundry model. Remaining, in order: retry throttled, unavailable and (once,
-   after a token refresh) unauthorized responses in the REST backend (two transient failures were
-   seen in about thirty live runs); re-check the cutoff on a larger, more realistic question set
+   retrieval and a Foundry model. Retries for throttled, unavailable and (once, after a token
+   refresh) unauthorized responses are built in the REST backend
+   ([ADR 0027](../decisions/0027-grounded-http-hosting.md)). Remaining: re-check the cutoff on a
+   larger, more realistic question set
    and corpus; swap to the Azure SDK if it can be locked.
    Vector or hybrid search, which may recover paraphrases, needs embeddings and cost approval.
-   Then **host the grounded profile over HTTP with streaming**, using label-filtered queries from
-   this adapter.
+   HTTP hosting of the grounded profile is built and verified on loopback (item 1).
    **Ingestion** is done for Markdown ([ADR 0025](../decisions/0025-corpus-synchronization.md)):
    `search-index --action sync` makes an index corpus hold exactly the chunks a folder produces
    for one tenant, adding changed chunks, removing stale ones, renewing freshness, refusing to

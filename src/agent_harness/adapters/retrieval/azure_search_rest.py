@@ -13,8 +13,8 @@ import re
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any, cast
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from typing import Any, Literal, cast
 from urllib.parse import quote, urlsplit
 
 from agent_harness.adapters.http_support import BearerTokenCache, NoRedirect, TokenCredential
@@ -34,6 +34,34 @@ _LIST_PAGE_SIZE = 1000
 _MAX_LISTED_DOCUMENTS = 100_000
 _FIELD_NAMES = frozenset(field["name"] for field in INDEX_FIELDS)
 _SELECT = ",".join(field["name"] for field in INDEX_FIELDS)
+_THROTTLED = frozenset({429, 503})
+_MAX_ATTEMPTS = 3
+_MAX_PAUSE_SECONDS = 5.0
+_RETRY_BUDGET_SECONDS = 30.0
+
+
+class _Transient(RetrievalError):
+    """A failure that may succeed on retry; it is still a ``RetrievalError`` once retries end."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: Literal["auth", "throttled", "network"],
+        retry_after: float | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.retry_after = retry_after
+
+
+def _retry_after(headers: Any) -> float | None:
+    """Read a delay in seconds; an absent, dated or malformed value means use our own backoff."""
+
+    value = headers.get("retry-after") if headers is not None else None
+    if not isinstance(value, str) or not value.isdecimal():
+        return None
+    return float(value)
 
 
 def validate_endpoint(endpoint: str) -> str:
@@ -107,6 +135,8 @@ class AzureSearchRestBackend:
         opener: urllib.request.OpenerDirector | None = None,
         clock: Callable[[], float] = time.time,
         semantic: bool = False,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         if not 0.0 < timeout_seconds <= 120.0:
             raise InputValidationError("Search timeout must be between 0 and 120 seconds")
@@ -116,6 +146,8 @@ class AzureSearchRestBackend:
         self._opener = opener or urllib.request.build_opener(NoRedirect)
         self._tokens = BearerTokenCache(credential, TOKEN_SCOPE, clock=clock)
         self._semantic = semantic
+        self._sleep = sleep
+        self._monotonic = monotonic
 
     def _bearer_token(self) -> str:
         return self._tokens.token()
@@ -253,12 +285,39 @@ class AzureSearchRestBackend:
         return uploaded
 
     async def _call(self, method: str, path: str, body: Any) -> dict[str, Any]:
-        try:
-            return await asyncio.to_thread(self._request, method, path, body)
-        except RetrievalError:
-            raise
-        except Exception as error:
-            raise RetrievalError("Search backend request failed") from error
+        """Send one request, retrying only failures that are safe and likely to be transient.
+
+        Every operation here is idempotent, so throttling (429), unavailability (503) and
+        connection failures may be retried a few times within a small time budget. A 401 is retried
+        once with a fresh token, because a cached token can be rejected shortly before it expires.
+        """
+
+        started = self._monotonic()
+        refreshed = False
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                return await asyncio.to_thread(self._request, method, path, body)
+            except _Transient as failure:
+                last = attempt == _MAX_ATTEMPTS
+                if failure.kind == "auth":
+                    if refreshed or last:
+                        raise
+                    refreshed = True
+                    self._tokens.invalidate()
+                    continue
+                pause = failure.retry_after if failure.retry_after is not None else 0.5 * attempt
+                if (
+                    last
+                    or pause > _MAX_PAUSE_SECONDS
+                    or self._monotonic() - started + pause > _RETRY_BUDGET_SECONDS
+                ):
+                    raise
+                await self._sleep(pause)
+            except RetrievalError:
+                raise
+            except Exception as error:
+                raise RetrievalError("Search backend request failed") from error
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def _request(self, method: str, path: str, body: Any) -> dict[str, Any]:
         data = None if body is None else json.dumps(body).encode("utf-8")
@@ -276,7 +335,16 @@ class AzureSearchRestBackend:
             with self._opener.open(request, timeout=self._timeout) as response:
                 raw = response.read(_MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as error:
-            raise RetrievalError(f"Search backend returned HTTP {error.code}") from None
+            message = f"Search backend returned HTTP {error.code}"
+            if error.code == 401:
+                raise _Transient(message, kind="auth") from None
+            if error.code in _THROTTLED:
+                raise _Transient(
+                    message, kind="throttled", retry_after=_retry_after(error.headers)
+                ) from None
+            raise RetrievalError(message) from None
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            raise _Transient("Search backend request failed", kind="network") from error
         if len(raw) > _MAX_RESPONSE_BYTES:
             raise RetrievalError("Search backend response is too large")
         if not raw:

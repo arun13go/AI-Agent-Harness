@@ -16,7 +16,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import uuid4
 
 from agent_framework import ChatOptions, SupportsChatGetResponse
@@ -44,15 +44,26 @@ from agent_harness.adapters.foundry.model_client import (
 from agent_harness.adapters.foundry.request_identity import FoundryIngressIdentity
 from agent_harness.adapters.foundry.telemetry import create_telemetry_provider
 from agent_harness.adapters.maf.agent_executor import MafAgentExecutor
+from agent_harness.adapters.retrieval.azure_search_factory import create_azure_search_provider
+from agent_harness.adapters.retrieval.in_memory import InMemoryRetrievalProvider
+from agent_harness.adapters.retrieval.lexical import IdfCoverageScorer
+from agent_harness.adapters.retrieval.markdown_corpus import load_markdown_corpus
 from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.adapters.tools.service_status import ServiceStatusTool
+from agent_harness.app.caller_labels import DeploymentCallerLabels, load_deployment_caller_labels
+from agent_harness.app.grounded_executor import (
+    GroundedExecutor,
+    GroundedResponse,
+    create_grounded_executor,
+    ensure_grounded_profile_supported,
+)
 from agent_harness.core.configuration import (
     HarnessConfig,
     ObservabilityConfig,
     ProfileName,
     load_harness_config,
 )
-from agent_harness.core.contracts import AuditSink, Tool
+from agent_harness.core.contracts import AuditSink, RetrievalProvider, Tool
 from agent_harness.core.errors import (
     AuthorizationError,
     ConfigurationError,
@@ -61,7 +72,14 @@ from agent_harness.core.errors import (
 )
 from agent_harness.core.governance import validate_identity_scope
 from agent_harness.core.registry import Registry
-from agent_harness.core.types import IdentityScope, Message, ModelRequest, RequestContext
+from agent_harness.core.types import (
+    AnswerabilityRoute,
+    IdentityScope,
+    Message,
+    ModelRequest,
+    RequestContext,
+    TokenUsage,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY_BYTES = 65_536
@@ -265,19 +283,156 @@ class _RequestBoundary:
         )
 
 
-def create_responses_host(
+@dataclass(frozen=True, slots=True)
+class _TurnResult:
+    """Final facts of one turn. ``text`` is None when the runtime produced no message."""
+
+    text: str | None
+    usage: TokenUsage
+
+
+class _Backend(Protocol):
+    """Execute one authenticated turn; ``stream`` yields text deltas, then one result."""
+
+    async def run(
+        self,
+        *,
+        identity: IdentityScope,
+        context: RequestContext,
+        messages: tuple[Message, ...],
+        max_output_tokens: int,
+    ) -> _TurnResult: ...
+
+    def stream(
+        self,
+        *,
+        identity: IdentityScope,
+        context: RequestContext,
+        messages: tuple[Message, ...],
+        max_output_tokens: int,
+    ) -> AsyncIterator[str | _TurnResult]: ...
+
+
+class _AssistantBackend:
+    def __init__(self, executor: MafAgentExecutor, tools: Registry[Tool]) -> None:
+        self._executor = executor
+        self._tools = tools
+
+    def _request(
+        self, context: RequestContext, messages: tuple[Message, ...], max_output_tokens: int
+    ) -> ModelRequest:
+        return ModelRequest(
+            context=context,
+            messages=messages,
+            tools=tuple(tool.definition for _, tool in self._tools),
+            max_output_tokens=max_output_tokens,
+        )
+
+    async def run(
+        self,
+        *,
+        identity: IdentityScope,
+        context: RequestContext,
+        messages: tuple[Message, ...],
+        max_output_tokens: int,
+    ) -> _TurnResult:
+        response = await self._executor.run(
+            authenticated_identity=identity,
+            request=self._request(context, messages, max_output_tokens),
+        )
+        text = None if response.message is None else response.message.content
+        return _TurnResult(text, response.usage)
+
+    async def stream(
+        self,
+        *,
+        identity: IdentityScope,
+        context: RequestContext,
+        messages: tuple[Message, ...],
+        max_output_tokens: int,
+    ) -> AsyncIterator[str | _TurnResult]:
+        async for response in self._executor.stream(
+            authenticated_identity=identity,
+            request=self._request(context, messages, max_output_tokens),
+        ):
+            if response.message is not None:
+                yield response.message.content
+            else:
+                yield _TurnResult(None, response.usage)
+
+
+class _GroundedBackend:
+    """Answer the last user message from scoped evidence; earlier user messages are history."""
+
+    def __init__(self, executor: GroundedExecutor) -> None:
+        self._executor = executor
+
+    async def run(
+        self,
+        *,
+        identity: IdentityScope,
+        context: RequestContext,
+        messages: tuple[Message, ...],
+        max_output_tokens: int,
+    ) -> _TurnResult:
+        response = await self._executor.run(
+            authenticated_identity=identity,
+            context=context,
+            question=messages[-1].content,
+            history=messages[:-1],
+            max_output_tokens=max_output_tokens,
+        )
+        return _TurnResult(
+            response.message.content + _sources_suffix(response),
+            response.model.usage if response.model else _NO_USAGE,
+        )
+
+    async def stream(
+        self,
+        *,
+        identity: IdentityScope,
+        context: RequestContext,
+        messages: tuple[Message, ...],
+        max_output_tokens: int,
+    ) -> AsyncIterator[str | _TurnResult]:
+        async for part in self._executor.stream(
+            authenticated_identity=identity,
+            context=context,
+            question=messages[-1].content,
+            history=messages[:-1],
+            max_output_tokens=max_output_tokens,
+        ):
+            if part.delta is not None:
+                yield part.delta
+            if part.final is not None:
+                suffix = _sources_suffix(part.final)
+                if suffix:
+                    yield suffix
+                yield _TurnResult(None, part.final.model.usage if part.final.model else _NO_USAGE)
+
+
+_NO_USAGE = TokenUsage(input_tokens=0, output_tokens=0)
+
+
+def _sources_suffix(response: GroundedResponse) -> str:
+    """List cited sources deterministically; never ask the model to format them."""
+
+    if response.route is not AnswerabilityRoute.ANSWER or not response.citations:
+        return ""
+    lines = "\n".join(
+        f"- {item.source_id} ({item.structural_path}, version {item.source_version})"
+        for item in response.citations
+    )
+    return "\n\nSources:\n" + lines
+
+
+def _build_host(
     *,
     config: HarnessConfig,
-    client: SupportsChatGetResponse[ChatOptions],
-    tools: Registry[Tool],
-    audit_sink: AuditSink,
+    backend: _Backend,
     authenticate: Authenticator,
-    telemetry_provider: TracerProvider | None = None,
+    telemetry_provider: TracerProvider | None,
 ) -> ResponsesAgentServerHost:
-    """Compose a stateless Responses host with an explicit trusted authenticator."""
-
-    if config.profile is not ProfileName.ASSISTANT:
-        raise ConfigurationError("The HTTP host currently supports only the assistant profile")
     if config.observability.exporter == "application-insights" and telemetry_provider is None:
         raise ConfigurationError(
             "Application Insights requires an explicitly composed telemetry provider"
@@ -289,7 +444,6 @@ def create_responses_host(
         access_log=None,
     )
     app.add_middleware(_RequestBoundary, authenticate=authenticate, provider=telemetry_provider)
-    executor = MafAgentExecutor(config=config, client=client, tools=tools, audit_sink=audit_sink)
 
     @app.response_handler
     async def handle(
@@ -303,12 +457,6 @@ def create_responses_host(
             correlation_id=f"correlation-{uuid4().hex}",
             trace_id=f"{active_trace.trace_id:032x}" if active_trace.is_valid else uuid4().hex,
             deadline=datetime.now(UTC) + timedelta(seconds=config.runtime.timeout_seconds),
-        )
-        model_request = ModelRequest(
-            context=harness_context,
-            messages=accepted.body.messages(),
-            tools=tuple(tool.definition for _, tool in tools),
-            max_output_tokens=accepted.body.max_output_tokens,
         )
         stream = ResponseEventStream(response_id=context.response_id, request=request)
         yield stream.emit_created()
@@ -335,34 +483,39 @@ def create_responses_host(
                 text = message.add_text_content()
                 yield text.emit_added()
                 chunks: list[str] = []
-                terminal = None
-                async for response in executor.stream(
-                    authenticated_identity=accepted.identity, request=model_request
+                result: _TurnResult | None = None
+                async for item in backend.stream(
+                    identity=accepted.identity,
+                    context=harness_context,
+                    messages=accepted.body.messages(),
+                    max_output_tokens=accepted.body.max_output_tokens,
                 ):
-                    if response.message is not None:
-                        chunks.append(response.message.content)
-                        yield text.emit_delta(response.message.content)
+                    if isinstance(item, str):
+                        chunks.append(item)
+                        yield text.emit_delta(item)
                     else:
-                        terminal = response
-                if terminal is None:
+                        result = item
+                if result is None:
                     raise ModelProviderError("Model stream ended without terminal metadata")
-                response = terminal
                 yield text.emit_text_done("".join(chunks))
                 yield text.emit_done()
                 yield message.emit_done()
             else:
-                response = await executor.run(
-                    authenticated_identity=accepted.identity, request=model_request
+                result = await backend.run(
+                    identity=accepted.identity,
+                    context=harness_context,
+                    messages=accepted.body.messages(),
+                    max_output_tokens=accepted.body.max_output_tokens,
                 )
-                if response.message is not None:
-                    for event in stream.output_item_message(response.message.content):
+                if result.text is not None:
+                    for event in stream.output_item_message(result.text):
                         yield event
             yield stream.emit_completed(
                 usage={
-                    "input_tokens": response.usage.input_tokens,
-                    "output_tokens": response.usage.output_tokens,
-                    "total_tokens": response.usage.input_tokens + response.usage.output_tokens,
-                    "input_tokens_details": {"cached_tokens": response.usage.cached_input_tokens},
+                    "input_tokens": result.usage.input_tokens,
+                    "output_tokens": result.usage.output_tokens,
+                    "total_tokens": result.usage.input_tokens + result.usage.output_tokens,
+                    "input_tokens_details": {"cached_tokens": result.usage.cached_input_tokens},
                     "output_tokens_details": {"reasoning_tokens": 0},
                 }
             )
@@ -374,6 +527,51 @@ def create_responses_host(
             await asyncio.gather(watcher, return_exceptions=True)
 
     return app
+
+
+def create_responses_host(
+    *,
+    config: HarnessConfig,
+    client: SupportsChatGetResponse[ChatOptions],
+    tools: Registry[Tool],
+    audit_sink: AuditSink,
+    authenticate: Authenticator,
+    telemetry_provider: TracerProvider | None = None,
+) -> ResponsesAgentServerHost:
+    """Compose a stateless Responses host with an explicit trusted authenticator."""
+
+    if config.profile is not ProfileName.ASSISTANT:
+        raise ConfigurationError("The HTTP host currently supports only the assistant profile")
+    executor = MafAgentExecutor(config=config, client=client, tools=tools, audit_sink=audit_sink)
+    return _build_host(
+        config=config,
+        backend=_AssistantBackend(executor, tools),
+        authenticate=authenticate,
+        telemetry_provider=telemetry_provider,
+    )
+
+
+def create_grounded_responses_host(
+    *,
+    config: HarnessConfig,
+    executor: GroundedExecutor,
+    authenticate: Authenticator,
+    telemetry_provider: TracerProvider | None = None,
+) -> ResponsesAgentServerHost:
+    """Compose a stateless Responses host that answers only from scoped evidence.
+
+    The executor must resolve caller labels through a deployment-level resolver. No request
+    field can supply, widen or replace them.
+    """
+
+    if config.profile is not ProfileName.GROUNDED_ASSISTANT:
+        raise ConfigurationError("The grounded HTTP host requires the grounded-assistant profile")
+    return _build_host(
+        config=config,
+        backend=_GroundedBackend(executor),
+        authenticate=authenticate,
+        telemetry_provider=telemetry_provider,
+    )
 
 
 def create_foundry_responses_host(
@@ -423,6 +621,11 @@ def main() -> None:
     parser.add_argument("--subject")
     parser.add_argument("--port", type=int, default=8088)
     parser.add_argument("--telemetry-exporter", choices=("console", "application-insights"))
+    parser.add_argument(
+        "--corpus", type=Path, help="Local Markdown folder (grounded in-memory adapter, local only)"
+    )
+    parser.add_argument("--corpus-label", action="append", default=[])
+    parser.add_argument("--fresh-days", type=int, default=30)
     args = parser.parse_args()
     config = load_harness_config(args.profile, Path("config/schema/v1/harness.schema.json"))
     if args.telemetry_exporter:
@@ -433,6 +636,20 @@ def main() -> None:
                 )
             }
         )
+    grounded = config.profile is ProfileName.GROUNDED_ASSISTANT
+    caller_labels: DeploymentCallerLabels | None = None
+    if grounded:
+        ensure_grounded_profile_supported(config)
+        azure_search = config.retrieval.adapter == "azure-ai-search"
+        if args.hosted and not azure_search:
+            parser.error("hosted grounded serving requires the azure-ai-search adapter")
+        if azure_search and (args.corpus is not None or args.corpus_label):
+            parser.error("--corpus and --corpus-label apply only to the in-memory adapter")
+        if not azure_search and args.corpus is None:
+            parser.error("the in-memory adapter requires --corpus")
+        caller_labels = load_deployment_caller_labels(os.environ)
+    elif args.corpus is not None or args.corpus_label:
+        parser.error("--corpus and --corpus-label apply only to the grounded-assistant profile")
     if args.hosted:
         if args.tenant is not None or args.subject is not None:
             parser.error("--tenant and --subject cannot be used with --hosted")
@@ -464,14 +681,50 @@ def main() -> None:
                 )
             client = create_foundry_chat_client(config, credential=credential, hosted=args.hosted)
             try:
-                app = create_responses_host(
-                    config=config,
-                    client=client,
-                    tools=tools,
-                    audit_sink=InMemoryAuditSink(Path("config/schema/v1/run-event.schema.json")),
-                    authenticate=authenticate,
-                    telemetry_provider=provider,
-                )
+                audit_sink = InMemoryAuditSink(Path("config/schema/v1/run-event.schema.json"))
+                if grounded:
+                    retrieval: RetrievalProvider
+                    if config.retrieval.adapter == "azure-ai-search":
+                        retrieval = create_azure_search_provider(
+                            config, environ=os.environ, credential=credential
+                        )
+                    else:
+                        retrieval = InMemoryRetrievalProvider(
+                            load_markdown_corpus(
+                                args.corpus,
+                                tenant_scope=tenant,
+                                authorization_labels=args.corpus_label,
+                                ingested_at=datetime.now(UTC),
+                                fresh_for=timedelta(days=args.fresh_days),
+                            ),
+                            scorer=IdfCoverageScorer(),
+                        )
+                    app = create_grounded_responses_host(
+                        config=config,
+                        executor=create_grounded_executor(
+                            config=config,
+                            retrieval=retrieval,
+                            runtime=MafAgentExecutor(
+                                config=config,
+                                client=client,
+                                tools=Registry[Tool]("tool"),
+                                audit_sink=audit_sink,
+                            ),
+                            audit_sink=audit_sink,
+                            label_resolver=caller_labels,
+                        ),
+                        authenticate=authenticate,
+                        telemetry_provider=provider,
+                    )
+                else:
+                    app = create_responses_host(
+                        config=config,
+                        client=client,
+                        tools=tools,
+                        audit_sink=audit_sink,
+                        authenticate=authenticate,
+                        telemetry_provider=provider,
+                    )
                 await app.run_async(host=host, port=args.port)
             finally:
                 try:

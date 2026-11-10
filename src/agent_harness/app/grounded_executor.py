@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from agent_harness.core.answerability import DeterministicAnswerabilityPolicy
 from agent_harness.core.configuration import HarnessConfig, ProfileName
@@ -14,6 +14,7 @@ from agent_harness.core.context import DeterministicContextPolicy
 from agent_harness.core.contracts import (
     AnswerabilityPolicy,
     AuditSink,
+    CallerLabelResolver,
     ContextPolicy,
     RetrievalProvider,
 )
@@ -23,6 +24,7 @@ from agent_harness.core.errors import (
     ExecutionLimitError,
     HarnessError,
     InputValidationError,
+    ModelProviderError,
     RetrievalError,
 )
 from agent_harness.core.event_writer import RunEventWriter
@@ -72,6 +74,35 @@ class GovernedRuntime(Protocol):
     ) -> ModelResponse: ...
 
 
+@runtime_checkable
+class StreamingGovernedRuntime(Protocol):
+    """Stream one bounded model request as text deltas followed by terminal metadata."""
+
+    def stream(
+        self,
+        *,
+        authenticated_identity: IdentityScope,
+        request: ModelRequest,
+        run_already_started: bool = False,
+    ) -> AsyncIterator[ModelResponse]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedStreamPart:
+    """One step of a streamed grounded run: text to show, or the final outcome (last)."""
+
+    delta: str | None = None
+    final: GroundedResponse | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _Prepared:
+    decision: AnswerabilityDecision
+    evidence: tuple[RetrievedItem, ...]
+    plan: ContextPlan | None
+    attempts: int
+
+
 @dataclass(frozen=True, slots=True)
 class GroundedResponse:
     """Outcome of one grounded run.
@@ -107,6 +138,7 @@ class GroundedExecutor:
         retrieval_limit: int = 8,
         clock: Callable[[], datetime] | None = None,
         event_id_factory: Callable[[], str] | None = None,
+        label_resolver: CallerLabelResolver | None = None,
     ) -> None:
         if context_budget_tokens < 1:
             raise ConfigurationError("Context budget must be positive")
@@ -124,6 +156,7 @@ class GroundedExecutor:
         self._limit = retrieval_limit
         self._clock = clock or (lambda: datetime.now(UTC))
         self._event_id_factory = event_id_factory
+        self._label_resolver = label_resolver
 
     async def run(
         self,
@@ -131,22 +164,107 @@ class GroundedExecutor:
         authenticated_identity: IdentityScope,
         context: RequestContext,
         question: str,
-        authorization_labels: Sequence[str],
+        authorization_labels: Sequence[str] | None = None,
         history: Sequence[Message] = (),
         max_output_tokens: int = 1024,
     ) -> GroundedResponse:
         """Run one grounded request.
 
-        ``authorization_labels`` must come from authentication, never from request content.
+        Labels come from the authenticated deployment context: either the configured resolver or,
+        for local tools and evaluations, an explicit ``authorization_labels`` argument. Request
+        content never supplies them.
         """
 
-        validate_request_context(authenticated_identity, context, now=self._clock())
-        labels = validate_authorization_labels(authorization_labels)
+        writer, explicit = await self._start(
+            authenticated_identity, context, question, authorization_labels
+        )
+        prepared = await self._prepare(writer, authenticated_identity, explicit, question, history)
+        if prepared.plan is None:
+            return _refusal(prepared)
+        return await self._answer(
+            authenticated_identity=authenticated_identity,
+            context=context,
+            prepared=prepared,
+            plan=prepared.plan,
+            max_output_tokens=max_output_tokens,
+        )
+
+    async def stream(
+        self,
+        *,
+        authenticated_identity: IdentityScope,
+        context: RequestContext,
+        question: str,
+        authorization_labels: Sequence[str] | None = None,
+        history: Sequence[Message] = (),
+        max_output_tokens: int = 1024,
+    ) -> AsyncIterator[GroundedStreamPart]:
+        """Stream one grounded request: text deltas, then one part carrying the outcome."""
+
+        runtime = self._runtime
+        if not isinstance(runtime, StreamingGovernedRuntime):
+            raise ConfigurationError("The configured runtime does not support streaming")
+        writer, explicit = await self._start(
+            authenticated_identity, context, question, authorization_labels
+        )
+        prepared = await self._prepare(writer, authenticated_identity, explicit, question, history)
+        if prepared.plan is None:
+            refusal = _refusal(prepared)
+            yield GroundedStreamPart(delta=refusal.message.content)
+            yield GroundedStreamPart(final=refusal)
+            return
+
+        plan = prepared.plan
+        pieces: list[str] = []
+        terminal: ModelResponse | None = None
+        # The runtime owns every terminal event from here, including validation failures.
+        async for part in runtime.stream(
+            authenticated_identity=authenticated_identity,
+            request=ModelRequest(
+                context=context,
+                messages=plan.messages,
+                tools=(),
+                max_output_tokens=max_output_tokens,
+            ),
+            run_already_started=True,
+        ):
+            if part.message is not None:
+                pieces.append(part.message.content)
+                yield GroundedStreamPart(delta=part.message.content)
+            else:
+                terminal = part
+        if terminal is None:
+            raise ModelProviderError("The model stream ended without final metadata")
+        model = ModelResponse(
+            message=Message("assistant", "".join(pieces), "model-output"),
+            tool_calls=(),
+            usage=terminal.usage,
+            model_id=terminal.model_id,
+            finish_reason=terminal.finish_reason,
+        )
+        yield GroundedStreamPart(final=_answered(prepared, plan, model))
+
+    async def _start(
+        self,
+        identity: IdentityScope,
+        context: RequestContext,
+        question: str,
+        authorization_labels: Sequence[str] | None,
+    ) -> tuple[RunEventWriter, tuple[str, ...] | None]:
+        validate_request_context(identity, context, now=self._clock())
+        if (authorization_labels is None) == (self._label_resolver is None):
+            raise ConfigurationError(
+                "Provide caller labels either explicitly or through a resolver, not both or neither"
+            )
+        explicit = (
+            None
+            if authorization_labels is None
+            else validate_authorization_labels(authorization_labels)
+        )
         if not question.strip() or len(question) > MAXIMUM_QUESTION_CHARACTERS:
             raise InputValidationError(
                 f"Question must contain 1 to {MAXIMUM_QUESTION_CHARACTERS} characters"
             )
-
         writer = RunEventWriter(
             context=context,
             audit_sink=self._audit_sink,
@@ -154,14 +272,28 @@ class GroundedExecutor:
             event_id_factory=self._event_id_factory,
         )
         await writer.emit("run.started", source="app", outcome="started", attributes={})
+        return writer, explicit
 
+    async def _prepare(
+        self,
+        writer: RunEventWriter,
+        identity: IdentityScope,
+        explicit_labels: tuple[str, ...] | None,
+        question: str,
+        history: Sequence[Message],
+    ) -> _Prepared:
         # Everything before the model call is reported here. Once the runtime is invoked it owns
         # the terminal event, so its failures must not be reported a second time.
-        plan: ContextPlan | None = None
         try:
-            decision, evidence, attempts = await self._gather(
-                identity=authenticated_identity, labels=labels, question=question
+            labels = (
+                explicit_labels
+                if explicit_labels is not None
+                else await self._resolve_labels(identity)
             )
+            decision, evidence, attempts = await self._gather(
+                identity=identity, labels=labels, question=question
+            )
+            plan: ContextPlan | None = None
             if decision.route is AnswerabilityRoute.ANSWER:
                 plan = self._plan(decision, evidence, question, history)
                 if not plan.included_evidence_ids:
@@ -169,7 +301,7 @@ class GroundedExecutor:
                         route=self._insufficient_route, reasons=(AnswerabilityReason.UNFIT,)
                     )
                     plan = None
-            await self._emit_retrieval(writer, decision, evidence, attempts, plan)
+            await self._emit_retrieval(writer, decision, evidence, attempts, plan, len(labels))
             if plan is None:
                 await writer.emit(
                     "run.completed",
@@ -184,27 +316,16 @@ class GroundedExecutor:
             code = error.code if isinstance(error, HarnessError) else "unexpected_error"
             await self._fail(writer, code=code, outcome="failed")
             raise
+        return _Prepared(decision=decision, evidence=evidence, plan=plan, attempts=attempts)
 
-        if plan is None:
-            return GroundedResponse(
-                route=decision.route,
-                reasons=decision.reasons,
-                message=Message("assistant", _RESPONSES[decision.route], "harness-response"),
-                citations=(),
-                included_evidence_ids=(),
-                omitted_evidence_ids=(),
-                retrieval_attempts=attempts,
-                model=None,
-            )
-        return await self._answer(
-            authenticated_identity=authenticated_identity,
-            context=context,
-            decision=decision,
-            evidence=evidence,
-            plan=plan,
-            attempts=attempts,
-            max_output_tokens=max_output_tokens,
-        )
+    async def _resolve_labels(self, identity: IdentityScope) -> tuple[str, ...]:
+        assert self._label_resolver is not None
+        try:
+            return validate_authorization_labels(await self._label_resolver.resolve(identity))
+        except HarnessError:
+            raise
+        except Exception as error:
+            raise AuthorizationError("Caller labels could not be resolved") from error
 
     async def _gather(
         self,
@@ -256,10 +377,8 @@ class GroundedExecutor:
         *,
         authenticated_identity: IdentityScope,
         context: RequestContext,
-        decision: AnswerabilityDecision,
-        evidence: tuple[RetrievedItem, ...],
+        prepared: _Prepared,
         plan: ContextPlan,
-        attempts: int,
         max_output_tokens: int,
     ) -> GroundedResponse:
         # The runtime owns every terminal event from here, including validation failures.
@@ -273,16 +392,16 @@ class GroundedExecutor:
             ),
             run_already_started=True,
         )
-        by_id = {item.item_id: item for item in evidence}
-        return GroundedResponse(
-            route=decision.route,
-            reasons=decision.reasons,
-            message=model.message or Message("assistant", "", "model-output"),
-            citations=tuple(_citation(by_id[item_id]) for item_id in plan.included_evidence_ids),
-            included_evidence_ids=plan.included_evidence_ids,
-            omitted_evidence_ids=plan.omitted_evidence_ids,
-            retrieval_attempts=attempts,
-            model=model,
+        return _answered(
+            prepared,
+            plan,
+            ModelResponse(
+                message=model.message or Message("assistant", "", "model-output"),
+                tool_calls=model.tool_calls,
+                usage=model.usage,
+                model_id=model.model_id,
+                finish_reason=model.finish_reason,
+            ),
         )
 
     @staticmethod
@@ -292,12 +411,14 @@ class GroundedExecutor:
         evidence: tuple[RetrievedItem, ...],
         attempts: int,
         plan: ContextPlan | None,
+        label_count: int,
     ) -> None:
         attributes: dict[str, JsonScalar | list[JsonScalar]] = {
             "route": decision.route.value,
             "reasons": [reason.value for reason in decision.reasons],
             "attempts": attempts,
             "resultCount": len(evidence),
+            "callerLabelCount": label_count,
         }
         if plan is not None:
             attributes.update(
@@ -319,6 +440,33 @@ class GroundedExecutor:
         await writer.emit(
             "run.failed", source="app", outcome=outcome, attributes={"errorCode": code}
         )
+
+
+def _refusal(prepared: _Prepared) -> GroundedResponse:
+    return GroundedResponse(
+        route=prepared.decision.route,
+        reasons=prepared.decision.reasons,
+        message=Message("assistant", _RESPONSES[prepared.decision.route], "harness-response"),
+        citations=(),
+        included_evidence_ids=(),
+        omitted_evidence_ids=(),
+        retrieval_attempts=prepared.attempts,
+        model=None,
+    )
+
+
+def _answered(prepared: _Prepared, plan: ContextPlan, model: ModelResponse) -> GroundedResponse:
+    by_id = {item.item_id: item for item in prepared.evidence}
+    return GroundedResponse(
+        route=prepared.decision.route,
+        reasons=prepared.decision.reasons,
+        message=model.message or Message("assistant", "", "model-output"),
+        citations=tuple(_citation(by_id[item_id]) for item_id in plan.included_evidence_ids),
+        included_evidence_ids=plan.included_evidence_ids,
+        omitted_evidence_ids=plan.omitted_evidence_ids,
+        retrieval_attempts=prepared.attempts,
+        model=model,
+    )
 
 
 def _citation(item: RetrievedItem) -> Citation:
@@ -385,6 +533,7 @@ def create_grounded_executor(
     maximum_retrieval_attempts: int | None = None,
     clock: Callable[[], datetime] | None = None,
     event_id_factory: Callable[[], str] | None = None,
+    label_resolver: CallerLabelResolver | None = None,
 ) -> GroundedExecutor:
     """Compose the grounded path from a validated profile, refusing unsupported settings.
 
@@ -423,4 +572,5 @@ def create_grounded_executor(
         retrieval_limit=limit,
         clock=clock,
         event_id_factory=event_id_factory,
+        label_resolver=label_resolver,
     )

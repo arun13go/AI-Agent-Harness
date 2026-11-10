@@ -60,3 +60,9 @@ class BearerTokenCache:
                 token = self._credential.get_token(self._scope)
                 self._token = token
             return token.token
+
+    def invalidate(self) -> None:
+        """Forget the cached token so the next call asks the credential for a fresh one."""
+
+        with self._lock:
+            self._token = None

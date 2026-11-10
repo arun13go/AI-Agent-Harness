@@ -50,6 +50,17 @@ class RetrievalProvider(Protocol):
     ) -> Sequence[RetrievedItem]: ...
 
 
+class CallerLabelResolver(Protocol):
+    """Decide which authorization labels an authenticated caller holds.
+
+    Labels must come from the authenticated deployment context, never from request content, a
+    profile, a tool or a model. Implementations may fail; callers must then fail closed before
+    any evidence is retrieved.
+    """
+
+    async def resolve(self, identity: IdentityScope) -> Sequence[str]: ...
+
+
 class RelevanceScorer(Protocol):
     """Score candidates for a query, one value in [0, 1] per candidate, in candidate order.
 

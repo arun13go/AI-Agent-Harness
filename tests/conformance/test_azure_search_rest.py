@@ -87,14 +87,23 @@ def backend(
     *,
     credential: Credential | None = None,
     index: str = "harness-chunks",
+    sleeps: list[float] | None = None,
+    elapsed: Callable[[], float] | None = None,
 ) -> tuple[AzureSearchRestBackend, FakeOpener]:
     opener = FakeOpener(handler)
+    record = sleeps if sleeps is not None else []
+
+    async def sleep(seconds: float) -> None:
+        record.append(seconds)
+
     return (
         AzureSearchRestBackend(
             endpoint=ENDPOINT,
             index_name=index,
             credential=credential or Credential(),
             opener=opener,  # pyright: ignore[reportArgumentType]
+            sleep=sleep,
+            monotonic=elapsed or (lambda: 0.0),
         ),
         opener,
     )
@@ -254,6 +263,196 @@ async def test_http_errors_report_the_status_without_the_response_body() -> None
     assert "429" in str(raised.value)
     assert "secret-document-text" not in str(raised.value)
     assert "fake-token-value" not in str(raised.value)
+
+
+def http_error(
+    request: urllib.request.Request, code: int, retry_after: str | None = None
+) -> urllib.error.HTTPError:
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError(
+        request.full_url, code, "error", headers, io.BytesIO(b"secret-document-text")
+    )
+
+
+def scripted(*steps: Exception | bytes) -> Callable[[urllib.request.Request], bytes]:
+    """Replay one outcome per request: raise an exception or return a body."""
+
+    remaining = list(steps)
+
+    def handler(request: urllib.request.Request) -> bytes:
+        del request
+        step = remaining.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+    return handler
+
+
+OK = b'{"value": []}'
+
+
+async def search_once(service: AzureSearchRestBackend) -> Any:
+    return await service.search(text="x", odata_filter="f", top=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [429, 503])
+async def test_throttling_and_unavailability_are_retried_with_a_short_backoff(code: int) -> None:
+    sleeps: list[float] = []
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(scripted(http_error(request, code), OK), sleeps=sleeps)
+
+    assert await search_once(service) == []
+
+    assert len(opener.requests) == 2 and sleeps == [0.5]
+
+
+@pytest.mark.asyncio
+async def test_a_short_retry_after_is_honored() -> None:
+    sleeps: list[float] = []
+    request = urllib.request.Request(ENDPOINT)
+    service, _ = backend(scripted(http_error(request, 429, "2"), OK), sleeps=sleeps)
+
+    await search_once(service)
+
+    assert sleeps == [2.0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["60", "6", "-1", "1.5", "Wed, 21 Oct 2026 07:28:00 GMT", ""])
+async def test_a_retry_after_that_is_too_long_or_malformed_never_waits_beyond_the_cap(
+    value: str,
+) -> None:
+    sleeps: list[float] = []
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(scripted(http_error(request, 429, value), OK), sleeps=sleeps)
+
+    if value in {"60", "6"}:
+        with pytest.raises(RetrievalError, match="HTTP 429"):
+            await search_once(service)
+        assert len(opener.requests) == 1 and sleeps == []
+    else:
+        await search_once(service)
+        assert sleeps == [0.5]
+
+
+@pytest.mark.asyncio
+async def test_a_huge_retry_after_never_waits() -> None:
+    sleeps: list[float] = []
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(scripted(http_error(request, 429, "9" * 5000), OK), sleeps=sleeps)
+
+    with pytest.raises(RetrievalError, match="HTTP 429"):
+        await search_once(service)
+
+    assert len(opener.requests) == 1 and sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_persistent_throttling_stops_after_three_attempts_without_leaking() -> None:
+    sleeps: list[float] = []
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(
+        scripted(*(http_error(request, 503) for _ in range(5))), sleeps=sleeps
+    )
+
+    with pytest.raises(RetrievalError) as raised:
+        await search_once(service)
+
+    assert "HTTP 503" in str(raised.value) and "secret-document-text" not in str(raised.value)
+    assert len(opener.requests) == 3 and sleeps == [0.5, 1.0]
+
+
+@pytest.mark.asyncio
+async def test_retries_stop_when_the_time_budget_would_be_exceeded() -> None:
+    clock = iter([0.0, 29.8])
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(scripted(http_error(request, 429), OK), elapsed=lambda: next(clock))
+
+    with pytest.raises(RetrievalError, match="HTTP 429"):
+        await search_once(service)
+
+    assert len(opener.requests) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_rejected_token_is_refreshed_once_and_the_call_retried_without_waiting() -> None:
+    sleeps: list[float] = []
+    credential = Credential()
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(
+        scripted(http_error(request, 401), OK), credential=credential, sleeps=sleeps
+    )
+
+    await search_once(service)
+
+    assert len(opener.requests) == 2 and len(credential.scopes) == 2 and sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_a_second_rejection_is_final() -> None:
+    credential = Credential()
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(
+        scripted(http_error(request, 401), http_error(request, 401), OK), credential=credential
+    )
+
+    with pytest.raises(RetrievalError, match="HTTP 401"):
+        await search_once(service)
+
+    assert len(opener.requests) == 2 and len(credential.scopes) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [400, 403, 404, 409, 500, 502])
+async def test_other_http_errors_are_not_retried(code: int) -> None:
+    request = urllib.request.Request(ENDPOINT)
+    service, opener = backend(scripted(http_error(request, code), OK))
+
+    with pytest.raises(RetrievalError, match=f"HTTP {code}"):
+        await search_once(service)
+
+    assert len(opener.requests) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "failure",
+    [TimeoutError("secret-host.example"), ConnectionResetError("x"), urllib.error.URLError("x")],
+)
+async def test_connection_failures_are_retried_then_reported_without_details(
+    failure: Exception,
+) -> None:
+    recovered, opener = backend(scripted(failure, OK))
+    assert await search_once(recovered) == [] and len(opener.requests) == 2
+
+    persistent, opener = backend(scripted(failure, failure, failure))
+    with pytest.raises(RetrievalError) as raised:
+        await search_once(persistent)
+
+    assert len(opener.requests) == 3 and "secret-host" not in str(raised.value)
+
+
+@pytest.mark.asyncio
+async def test_credential_and_response_failures_are_not_retried() -> None:
+    class FailingCredential(Credential):
+        def get_token(self, *scopes: str) -> Any:
+            self.scopes.append(scopes)
+            raise RuntimeError("tenant-secret-id")
+
+    broken = FailingCredential()
+    failing, opener = backend(scripted(OK), credential=broken)
+    with pytest.raises(RetrievalError):
+        await search_once(failing)
+    invalid, invalid_opener = backend(scripted(b"not json", OK))
+    with pytest.raises(RetrievalError, match="invalid JSON"):
+        await search_once(invalid)
+
+    assert len(broken.scopes) == 1 and opener.requests == []
+    assert len(invalid_opener.requests) == 1
 
 
 @pytest.mark.asyncio

@@ -351,6 +351,75 @@ async def test_stream_preserves_order_and_emits_terminal_usage() -> None:
 
 
 @pytest.mark.asyncio
+async def test_started_stream_does_not_emit_a_second_start_and_completes_once() -> None:
+    config = load_harness_config(ROOT / "config" / "profiles" / "assistant.yaml", CONFIG_SCHEMA)
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    runtime = MafAgentExecutor(
+        config=config,
+        client=ScriptedStreamingClient(),
+        tools=Registry[Tool]("tool"),
+        audit_sink=audit,
+    )
+    context = make_context()
+
+    parts = [
+        part
+        async for part in runtime.stream(
+            authenticated_identity=context.identity,
+            request=make_request(context, Registry[Tool]("tool")),
+            run_already_started=True,
+        )
+    ]
+
+    assert parts[-1].message is None
+    types = [event.event_type for event in audit.events]
+    assert types == ["model.requested", "model.completed", "run.completed"]
+
+
+@pytest.mark.asyncio
+async def test_started_stream_is_closed_when_request_validation_fails() -> None:
+    config = load_harness_config(ROOT / "config" / "profiles" / "action-agent.yaml", CONFIG_SCHEMA)
+    tools = Registry[Tool]("tool")
+    tools.register("create_maintenance_request", MaintenanceRequestTool())
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    context = make_context()
+    runtime = MafAgentExecutor(
+        config=config, client=ScriptedToolClient(), tools=tools, audit_sink=audit
+    )
+
+    with pytest.raises(InputValidationError, match="Act-tier tools cannot be invoked directly"):
+        async for _ in runtime.stream(
+            authenticated_identity=context.identity,
+            request=make_request(context, tools),
+            run_already_started=True,
+        ):
+            pass
+
+    assert [event.event_type for event in audit.events] == ["run.failed"]
+    assert audit.events[0].attributes == {"errorCode": "input_validation_error"}
+
+
+@pytest.mark.asyncio
+async def test_unstarted_stream_validation_failure_emits_nothing() -> None:
+    config = load_harness_config(ROOT / "config" / "profiles" / "action-agent.yaml", CONFIG_SCHEMA)
+    tools = Registry[Tool]("tool")
+    tools.register("create_maintenance_request", MaintenanceRequestTool())
+    audit = InMemoryAuditSink(EVENT_SCHEMA)
+    context = make_context()
+    runtime = MafAgentExecutor(
+        config=config, client=ScriptedToolClient(), tools=tools, audit_sink=audit
+    )
+
+    with pytest.raises(InputValidationError):
+        async for _ in runtime.stream(
+            authenticated_identity=context.identity, request=make_request(context, tools)
+        ):
+            pass
+
+    assert audit.events == ()
+
+
+@pytest.mark.asyncio
 async def test_act_tier_tool_cannot_bypass_proposal_lifecycle() -> None:
     config = load_harness_config(
         ROOT / "config" / "profiles" / "action-agent.yaml",

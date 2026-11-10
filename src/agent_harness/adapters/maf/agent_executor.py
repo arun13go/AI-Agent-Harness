@@ -175,14 +175,34 @@ class MafAgentExecutor:
         *,
         authenticated_identity: IdentityScope,
         request: ModelRequest,
+        run_already_started: bool = False,
     ) -> AsyncIterator[ModelResponse]:
-        """Stream ordered text deltas and one terminal metadata response."""
+        """Stream ordered text deltas and one terminal metadata response.
 
-        context, writer, agent, messages, timeout_seconds = self._prepare_execution(
-            authenticated_identity=authenticated_identity,
-            request=request,
-        )
-        await self._emit_started(writer, request=request)
+        ``run_already_started`` has the same meaning as for ``run``: the caller emitted
+        ``run.started``, so this method does not, and it always closes the run.
+        """
+
+        try:
+            context, writer, agent, messages, timeout_seconds = self._prepare_execution(
+                authenticated_identity=authenticated_identity,
+                request=request,
+            )
+        except HarnessError as error:
+            if run_already_started:
+                await RunEventWriter(
+                    context=request.context,
+                    audit_sink=self._audit_sink,
+                    clock=self._clock,
+                    event_id_factory=self._event_id_factory,
+                ).emit(
+                    "run.failed",
+                    source="maf-runtime",
+                    outcome="failed",
+                    attributes={"errorCode": error.code},
+                )
+            raise
+        await self._emit_started(writer, request=request, run_started=not run_already_started)
         try:
             async with asyncio.timeout(timeout_seconds):
                 with trace.use_span(self._parent_span(context.trace_id, context.run_id)):

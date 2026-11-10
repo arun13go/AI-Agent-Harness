@@ -48,6 +48,13 @@ def test_manifest_selects_foundry_container_protocol_and_runtime_environment() -
     assert "FOUNDRY_AGENT_TENANT_ID" not in variables
 
 
+def test_image_carries_every_shipped_profile_a_second_hosted_agent_may_select() -> None:
+    allowed = (ROOT / ".dockerignore").read_text().splitlines()
+    for profile in ("assistant.yaml", "grounded-assistant.yaml"):
+        assert (ROOT / "config" / "profiles" / profile).is_file()
+        assert f"!config/profiles/{profile}" in allowed
+
+
 def test_container_defaults_to_guarded_nonroot_production_runtime() -> None:
     dockerfile = (ROOT / "Dockerfile").read_text()
     assert "python:3.12.13-slim-bookworm" in dockerfile

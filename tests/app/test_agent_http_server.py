@@ -23,10 +23,12 @@ from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.adapters.tools.service_status import ServiceStatusTool
 from agent_harness.app.agent_http_server import (
     Authenticator,
+    agent_name_from_environment,
     create_foundry_responses_host,
     create_local_authenticator,
     create_responses_host,
     main,
+    profile_from_environment,
 )
 from agent_harness.core.configuration import ObservabilityConfig, load_harness_config
 from agent_harness.core.contracts import Tool
@@ -50,6 +52,7 @@ def _compose(
     client: ScriptedToolClient | ScriptedStreamingClient | BlockingClient | FailingClient,
     *,
     authenticate: Authenticator | None = None,
+    agent_name: str = "agent-harness",
 ) -> tuple[ResponsesAgentServerHost, InMemoryAuditSink]:
     config = load_harness_config(
         ROOT / "config/profiles/assistant.yaml", ROOT / "config/schema/v1/harness.schema.json"
@@ -69,6 +72,7 @@ def _compose(
         tools=tools,
         audit_sink=audit,
         authenticate=authenticate or authenticate_test,
+        agent_name=agent_name,
     ), audit
 
 
@@ -89,6 +93,66 @@ async def test_health_does_not_require_authentication_or_model_call() -> None:
     assert response.json() == {"status": "healthy"}
     assert model.requests == []
     assert audit.events == ()
+
+
+async def test_a_second_hosted_agent_answers_only_for_its_own_name() -> None:
+    other = "agent-harness-grounded"
+    accepted = [
+        {"input": "Check API status"},
+        {"input": "Check API status", "model": other},
+        {
+            "input": "Check API status",
+            "agent_reference": {"type": "agent_reference", "name": other},
+        },
+    ]
+    refused = [
+        {"input": "Check API status", "model": "agent-harness"},
+        {
+            "input": "Check API status",
+            "agent_reference": {"type": "agent_reference", "name": "agent-harness"},
+        },
+    ]
+    for payload in accepted:
+        app, _ = _compose(ScriptedToolClient(), agent_name=other)
+        async with _http(app) as http:
+            response = await http.post("/responses", json=payload)
+        assert response.json()["status"] == "completed"
+    for payload in refused:
+        model = ScriptedToolClient()
+        app, audit = _compose(model, agent_name=other)
+        async with _http(app) as http:
+            response = await http.post("/responses", json=payload)
+        assert response.status_code == 400
+        assert model.requests == [] and audit.events == ()
+
+
+@pytest.mark.parametrize("name", ["", "Agent", "a_b", "-a", "a" * 64, "a b", "a/b"])
+def test_an_invalid_agent_name_fails_composition(name: str) -> None:
+    with pytest.raises(ConfigurationError, match="Agent name"):
+        _compose(ScriptedToolClient(), agent_name=name)
+
+
+def test_agent_name_and_profile_come_from_the_deployment_environment() -> None:
+    assert agent_name_from_environment({}) == "agent-harness"
+    assert agent_name_from_environment({"HARNESS_AGENT_NAME": "agent-two"}) == "agent-two"
+    assert profile_from_environment({}) is None
+    assert profile_from_environment({"HARNESS_PROFILE": "grounded-assistant.yaml"}) == Path(
+        "config/profiles/grounded-assistant.yaml"
+    )
+
+
+@pytest.mark.parametrize("value", ["", "Bad", "x" * 64])
+def test_a_bad_agent_name_in_the_environment_fails_startup(value: str) -> None:
+    with pytest.raises(ConfigurationError):
+        agent_name_from_environment({"HARNESS_AGENT_NAME": value})
+
+
+@pytest.mark.parametrize(
+    "value", ["", "../x.yaml", "a/b.yaml", "a\\b.yaml", "x.yml", "x", ".yaml", "-a.yaml"]
+)
+def test_a_profile_in_the_environment_must_be_a_bare_yaml_file_name(value: str) -> None:
+    with pytest.raises(ConfigurationError, match="HARNESS_PROFILE"):
+        profile_from_environment({"HARNESS_PROFILE": value})
 
 
 @pytest.mark.parametrize("version", [None, "3"])

@@ -9,6 +9,7 @@
 !config/
 !config/profiles/
 !config/profiles/assistant.yaml
+!config/profiles/grounded-assistant.yaml
 !config/schema/
 !config/schema/v1/
 !config/schema/v1/harness.schema.json

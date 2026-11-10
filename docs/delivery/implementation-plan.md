@@ -25,7 +25,7 @@ adapter expectations.
 | 1B | Approval and action lifecycle | Complete |
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Complete |
-| 2 | Grounded-assistant profile | Complete (grounded path on Azure AI Search, Markdown/PDF/Word ingestion, local HTTP hosting; a hosted grounded deployment is not done and is carried forward) |
+| 2 | Grounded-assistant profile | Complete (grounded path on Azure AI Search, Markdown/PDF/Word ingestion, HTTP hosting verified locally and on a hosted agent) |
 | 3 | Durable Azure adapters | Next |
 | 4 | Evaluation and operations | Not started |
 | 5 | Deployment and CI hardening | Not started |
@@ -497,10 +497,11 @@ next step follows this list. Slices, in the order they were delivered:
 7. **Episodic memory and `summarize` compaction** (decided: deferred to Phase 3 and Phase 4,
    [ADR 0029](../decisions/0029-defer-episodic-memory-and-summarize-compaction.md)).
 
-**Carried forward from Phase 2** (none block Phase 3): a hosted grounded deployment (new agent
-version or second agent, search endpoint and labels settings, Search Index Data Reader for the
-agent identity, each needing approval); a larger relevance set to re-check the provisional 0.625
-cutoff; extraction quality on real documents; answer faithfulness (Phase 4).
+**Carried forward from Phase 2** (none block Phase 3): a larger relevance set to re-check the
+provisional 0.625 cutoff; extraction quality on real documents; answer faithfulness (Phase 4);
+a repeatable way to deploy the second hosted agent without a staging copy. The hosted grounded
+agent itself was deployed, verified live and deleted
+([ADR 0030](../decisions/0030-hosted-grounded-agent.md)).
 
 ## Current Next Step
 

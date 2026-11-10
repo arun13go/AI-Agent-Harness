@@ -11,6 +11,7 @@ import argparse
 import asyncio
 import logging
 import os
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -83,7 +84,38 @@ from agent_harness.core.types import (
 
 _LOGGER = logging.getLogger(__name__)
 _MAX_BODY_BYTES = 65_536
+DEFAULT_AGENT_NAME = "agent-harness"
+AGENT_NAME_ENVIRONMENT_VARIABLE = "HARNESS_AGENT_NAME"
+PROFILE_ENVIRONMENT_VARIABLE = "HARNESS_PROFILE"
+_AGENT_NAME_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
+_PROFILE_FILE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}\.yaml$")
 Authenticator = Callable[[Request], Awaitable[IdentityScope]]
+
+
+def validate_agent_name(name: str) -> str:
+    """Return the name of the hosted agent this server answers for, or reject it."""
+
+    if not re.fullmatch(_AGENT_NAME_PATTERN, name):
+        raise ConfigurationError("Agent name must be 1 to 63 lowercase letters, digits or hyphens")
+    return name
+
+
+def agent_name_from_environment(environ: Mapping[str, str]) -> str:
+    """Read the deployment's agent name; a second hosted agent sets it, the default is unchanged."""
+
+    value = environ.get(AGENT_NAME_ENVIRONMENT_VARIABLE)
+    return DEFAULT_AGENT_NAME if value is None else validate_agent_name(value)
+
+
+def profile_from_environment(environ: Mapping[str, str]) -> Path | None:
+    """Read a profile file name from the deployment; only a bare file in config/profiles."""
+
+    value = environ.get(PROFILE_ENVIRONMENT_VARIABLE)
+    if value is None:
+        return None
+    if not _PROFILE_FILE.fullmatch(value):
+        raise ConfigurationError(f"{PROFILE_ENVIRONMENT_VARIABLE} must be a YAML file name")
+    return Path("config/profiles") / value
 
 
 class _InputText(BaseModel):
@@ -102,14 +134,14 @@ class _UserMessage(BaseModel):
 class _AgentReference(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     type: Literal["agent_reference"]
-    name: Literal["agent-harness"]
+    name: str = Field(pattern=_AGENT_NAME_PATTERN, max_length=63)
     version: str | None = Field(default=None, pattern=r"^[1-9][0-9]{0,9}$")
 
 
 class _CreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     input: str | list[_UserMessage] = Field(min_length=1, max_length=_MAX_BODY_BYTES)
-    model: Literal["agent-harness"] = "agent-harness"
+    model: str | None = Field(default=None, pattern=_AGENT_NAME_PATTERN, max_length=63)
     stream: bool = False
     store: Literal[False] = False
     background: Literal[False] = False
@@ -147,10 +179,16 @@ class _RequestBoundary:
     """Authenticate and bound stateless requests before the SDK handles them."""
 
     def __init__(
-        self, app: ASGIApp, *, authenticate: Authenticator, provider: TracerProvider | None = None
+        self,
+        app: ASGIApp,
+        *,
+        authenticate: Authenticator,
+        agent_name: str = DEFAULT_AGENT_NAME,
+        provider: TracerProvider | None = None,
     ) -> None:
         self.app = app
         self.authenticate = authenticate
+        self.agent_name = agent_name
         self.tracer = (provider or trace.get_tracer_provider()).get_tracer(__name__)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -259,6 +297,13 @@ class _RequestBoundary:
                 _LOGGER.warning("HTTP schema rejection at fields: %s", ".".join(fields))
             await self._reject(scope, receive, send, 400, "invalid_request")
             return
+        reference = body.agent_reference
+        if (body.model is not None and body.model != self.agent_name) or (
+            reference is not None and reference.name != self.agent_name
+        ):
+            await self._reject(scope, receive, send, 400, "invalid_request")
+            return
+        body = body.model_copy(update={"model": self.agent_name})
         normalized = body.model_dump_json(exclude={"agent_reference", "agent_session_id"}).encode()
         delivered = False
 
@@ -432,7 +477,9 @@ def _build_host(
     backend: _Backend,
     authenticate: Authenticator,
     telemetry_provider: TracerProvider | None,
+    agent_name: str = DEFAULT_AGENT_NAME,
 ) -> ResponsesAgentServerHost:
+    validate_agent_name(agent_name)
     if config.observability.exporter == "application-insights" and telemetry_provider is None:
         raise ConfigurationError(
             "Application Insights requires an explicitly composed telemetry provider"
@@ -443,7 +490,12 @@ def _build_host(
         configure_observability=None,
         access_log=None,
     )
-    app.add_middleware(_RequestBoundary, authenticate=authenticate, provider=telemetry_provider)
+    app.add_middleware(
+        _RequestBoundary,
+        authenticate=authenticate,
+        agent_name=agent_name,
+        provider=telemetry_provider,
+    )
 
     @app.response_handler
     async def handle(
@@ -537,6 +589,7 @@ def create_responses_host(
     audit_sink: AuditSink,
     authenticate: Authenticator,
     telemetry_provider: TracerProvider | None = None,
+    agent_name: str = DEFAULT_AGENT_NAME,
 ) -> ResponsesAgentServerHost:
     """Compose a stateless Responses host with an explicit trusted authenticator."""
 
@@ -548,6 +601,7 @@ def create_responses_host(
         backend=_AssistantBackend(executor, tools),
         authenticate=authenticate,
         telemetry_provider=telemetry_provider,
+        agent_name=agent_name,
     )
 
 
@@ -557,6 +611,7 @@ def create_grounded_responses_host(
     executor: GroundedExecutor,
     authenticate: Authenticator,
     telemetry_provider: TracerProvider | None = None,
+    agent_name: str = DEFAULT_AGENT_NAME,
 ) -> ResponsesAgentServerHost:
     """Compose a stateless Responses host that answers only from scoped evidence.
 
@@ -571,6 +626,7 @@ def create_grounded_responses_host(
         backend=_GroundedBackend(executor),
         authenticate=authenticate,
         telemetry_provider=telemetry_provider,
+        agent_name=agent_name,
     )
 
 
@@ -581,6 +637,7 @@ def create_foundry_responses_host(
     tools: Registry[Tool],
     audit_sink: AuditSink,
     environment: Mapping[str, str] | None = None,
+    agent_name: str = DEFAULT_AGENT_NAME,
 ) -> ResponsesAgentServerHost:
     """Compose identity mapping exclusively for Foundry's isolated ingress."""
 
@@ -590,6 +647,7 @@ def create_foundry_responses_host(
         tools=tools,
         audit_sink=audit_sink,
         authenticate=FoundryIngressIdentity(environment=environment),
+        agent_name=agent_name,
     )
 
 
@@ -615,7 +673,11 @@ def main() -> None:
     """Start either guarded local development or isolated Foundry hosting."""
 
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", type=Path, default=Path("config/profiles/assistant.yaml"))
+    parser.add_argument(
+        "--profile",
+        type=Path,
+        default=profile_from_environment(os.environ) or Path("config/profiles/assistant.yaml"),
+    )
     parser.add_argument("--hosted", action="store_true")
     parser.add_argument("--tenant")
     parser.add_argument("--subject")
@@ -627,6 +689,7 @@ def main() -> None:
     parser.add_argument("--corpus-label", action="append", default=[])
     parser.add_argument("--fresh-days", type=int, default=30)
     args = parser.parse_args()
+    agent_name = agent_name_from_environment(os.environ)
     config = load_harness_config(args.profile, Path("config/schema/v1/harness.schema.json"))
     if args.telemetry_exporter:
         config = config.model_copy(
@@ -715,6 +778,7 @@ def main() -> None:
                         ),
                         authenticate=authenticate,
                         telemetry_provider=provider,
+                        agent_name=agent_name,
                     )
                 else:
                     app = create_responses_host(
@@ -724,6 +788,7 @@ def main() -> None:
                         audit_sink=audit_sink,
                         authenticate=authenticate,
                         telemetry_provider=provider,
+                        agent_name=agent_name,
                     )
                 await app.run_async(host=host, port=args.port)
             finally:

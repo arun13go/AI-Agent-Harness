@@ -28,8 +28,8 @@ adapter expectations.
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Complete |
 | 2 | Grounded-assistant profile | Complete (grounded path on Azure AI Search, Markdown/PDF/Word ingestion, HTTP hosting verified locally and on a hosted agent) |
-| 3 | Durable Azure adapters | Built and tested on fakes; live validation blocked by tenant network policy; exit evidence narrowed, awaiting sign-off ([ADR 0033](../decisions/0033-phase-3-scope.md)) |
-| 4 | Evaluation and operations | Not started |
+| 3 | Durable Azure adapters | Complete with limits (stores built and conformance-tested on fakes; live validation, expiry and deletion tests carried forward; [ADR 0033](../decisions/0033-phase-3-scope.md)) |
+| 4 | Evaluation and operations | In progress (design done, [ADR 0034](../decisions/0034-phase-4-evaluation-and-release-report.md)) |
 | 5 | Deployment and CI hardening | Not started |
 | 6 | Pilots and v1.0 release | Not started |
 
@@ -505,13 +505,9 @@ a repeatable way to deploy the second hosted agent without a staging copy. The h
 agent itself was deployed, verified live and deleted
 ([ADR 0030](../decisions/0030-hosted-grounded-agent.md)).
 
-## Current Next Step
+## Phase 3 Close-Out
 
-Start **Phase 3: Durable Azure adapters**. The exit evidence is that in-memory and Azure adapters
-pass the same isolation, concurrency, expiry, deletion and replay tests. The ports already exist
-(`MemoryStore`, `RunStateStore`, `ArtifactStore`, `ProposalStore`, `CheckpointStore`,
-`ApprovalProvider`, `IdempotencyLedger`, `AuditSink`), so the work follows the pattern used for
-Azure AI Search: contract first, local first, then the cloud. In order:
+Phase 3 is complete with limits. Steps, in the order delivered:
 
 1. **Storage design** (done: [ADR 0032](../decisions/0032-phase-3-storage-design.md)): Cosmos DB
    only, two containers, `/tenantScope` partition, no Blob or cache.
@@ -535,8 +531,27 @@ Azure AI Search: contract first, local first, then the cloud. In order:
 5. **Scope decisions** (done: [ADR 0033](../decisions/0033-phase-3-scope.md)): the Cosmos stores are
    wired when a profile needs durable state; `cosmos-db` is refused at load until then; no
    retention setting beyond the audit parameter; episodic memory and tenant deletion wait for a
-   consumer. **Open:** live validation from inside the network, and sign-off to narrow the exit
-   evidence (isolation, concurrency and replay on a fake backend; no expiry or deletion tests).
+   consumer. **Accepted limits:** no live Cosmos validation (tenant policy blocks public access, so
+   it needs a run from inside the network), and expiry and deletion tests wait for a store that
+   expires or deletes. The exit evidence is met for isolation, concurrency and replay on a fake
+   backend.
+
+## Current Next Step
+
+Start **Phase 4: Evaluation and operations** ([ADR 0034](../decisions/0034-phase-4-evaluation-and-release-report.md)):
+compose Foundry evaluation, reuse the existing question set, and add only a thresholds file and a
+`release-report` command. Exit evidence: one go-live report covers policy, quality, safety,
+latency, cost and telemetry. In order:
+
+1. **Design** (done: ADR 0034).
+2. **Thresholds and `release-report`**, test-first over saved fixtures, with no cloud use. The
+   Foundry result parser waits for a saved real result (step 4).
+3. **Dataset export and the Application Insights query**: export the grounded questions and a few
+   assistant tool-call and injection rows to Foundry's `inputData`; check in one telemetry query.
+4. **First live evaluation**, only after separate approval of the run's cost (judge tokens and any
+   hosted-agent compute), the agent to evaluate, and the evaluation objects created in the
+   project. Save the real result, finish the parser, set the first floors, and repeat to see noise.
+5. **First go-live report** over real results, and the Phase 4 close-out.
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

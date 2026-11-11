@@ -117,13 +117,31 @@ class RetrievalConfig(HarnessModel):
         return self
 
 
+def _require_in_memory(section: str, value: str) -> str:
+    # The schema reserves "cosmos-db", but no composition builds the Cosmos stores yet (ADR 0033);
+    # accepting it would silently keep state and memory in process memory.
+    if value != "in-memory":
+        raise ValueError(f"{section} adapter '{value}' is not implemented; use 'in-memory'")
+    return value
+
+
 class MemoryConfig(HarnessModel):
     adapter: Literal["in-memory", "cosmos-db"]
     ttl_days: int = Field(alias="ttlDays", ge=1, le=3650)
 
+    @field_validator("adapter")
+    @classmethod
+    def _require_implemented_adapter(cls, value: str) -> str:
+        return _require_in_memory("memory", value)
+
 
 class StateConfig(HarnessModel):
     adapter: Literal["in-memory", "cosmos-db"]
+
+    @field_validator("adapter")
+    @classmethod
+    def _require_implemented_adapter(cls, value: str) -> str:
+        return _require_in_memory("state", value)
 
 
 class GovernanceConfig(HarnessModel):

@@ -28,7 +28,7 @@ adapter expectations.
 | 1C | MAF and Foundry runtime integration | Complete (approved live-test model exception) |
 | 1D | Azure Dev deployment | Complete |
 | 2 | Grounded-assistant profile | Complete (grounded path on Azure AI Search, Markdown/PDF/Word ingestion, HTTP hosting verified locally and on a hosted agent) |
-| 3 | Durable Azure adapters | Next |
+| 3 | Durable Azure adapters | Built and tested on fakes; live validation blocked by tenant network policy; exit evidence narrowed, awaiting sign-off ([ADR 0033](../decisions/0033-phase-3-scope.md)) |
 | 4 | Evaluation and operations | Not started |
 | 5 | Deployment and CI hardening | Not started |
 | 6 | Pilots and v1.0 release | Not started |
@@ -532,7 +532,11 @@ Azure AI Search: contract first, local first, then the cloud. In order:
    on this subscription), but tenant policy disables its public network access, so live calls
    from this machine fail with a firewall 403. Live validation needs a run from inside the
    network; see [ADR 0032](../decisions/0032-phase-3-storage-design.md).
-5. Retention settings, then episodic memory (ADR 0029).
+5. **Scope decisions** (done: [ADR 0033](../decisions/0033-phase-3-scope.md)): the Cosmos stores are
+   wired when a profile needs durable state; `cosmos-db` is refused at load until then; no
+   retention setting beyond the audit parameter; episodic memory and tenant deletion wait for a
+   consumer. **Open:** live validation from inside the network, and sign-off to narrow the exit
+   evidence (isolation, concurrency and replay on a fake backend; no expiry or deletion tests).
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching
 live outputs, and the shared post-provision smoke passes. The ADR 0015 bridge stays disabled and

@@ -35,6 +35,7 @@ from agent_harness.adapters.storage.in_memory_audit import InMemoryAuditSink
 from agent_harness.adapters.tools.maintenance_request import MaintenanceRequestTool
 from agent_harness.adapters.tools.service_status import ServiceStatusTool
 from agent_harness.app.action_lifecycle import ActionLifecycle
+from agent_harness.app.eval_export import export_rows, write_rows
 from agent_harness.app.grounded_executor import (
     create_grounded_executor,
     ensure_grounded_profile_supported,
@@ -49,6 +50,7 @@ from agent_harness.app.release_report import (
     parse_labels,
     render_markdown,
     retrieval_metrics,
+    telemetry_metrics,
     write_text,
 )
 from agent_harness.app.retrieval_eval import evaluate_retrieval
@@ -219,6 +221,11 @@ def _build_parser() -> argparse.ArgumentParser:
     release_parser.add_argument("--junit", type=Path, help="pytest junit XML (policy scorecard)")
     release_parser.add_argument("--retrieval-eval", type=Path, help="eval-retrieval JSON output")
     release_parser.add_argument(
+        "--app-insights",
+        type=Path,
+        help="result of evals/release/telemetry.kql from `az monitor app-insights query`",
+    )
+    release_parser.add_argument(
         "--metrics",
         type=Path,
         action="append",
@@ -230,6 +237,17 @@ def _build_parser() -> argparse.ArgumentParser:
     release_parser.add_argument("--markdown", type=Path, help="write the Markdown report")
     release_parser.add_argument(
         "--label", action="append", default=[], help="KEY=VALUE run label (repeatable)"
+    )
+
+    export_parser = subparsers.add_parser(
+        "export-eval-rows",
+        help="Write evaluation rows in Foundry's inputData shape (no cloud call)",
+    )
+    export_parser.add_argument("--target", choices=("grounded", "assistant"), required=True)
+    export_parser.add_argument("--out", type=Path, required=True)
+    export_parser.add_argument("--dataset", type=Path, default=Path("evals/grounded-relevance"))
+    export_parser.add_argument(
+        "--assistant-file", type=Path, default=Path("evals/release/assistant.yaml")
     )
 
     search_parser = subparsers.add_parser(
@@ -514,6 +532,8 @@ def _run_release_report(args: argparse.Namespace) -> dict[str, object]:
         sources.append(junit_metrics(args.junit))
     if args.retrieval_eval is not None:
         sources.append(retrieval_metrics(args.retrieval_eval))
+    if args.app_insights is not None:
+        sources.append(telemetry_metrics(args.app_insights))
     baseline = load_metrics(args.baseline) if args.baseline is not None else None
     report = build_report(
         thresholds,
@@ -526,6 +546,14 @@ def _run_release_report(args: argparse.Namespace) -> dict[str, object]:
     if args.markdown is not None:
         write_text(args.markdown, render_markdown(report))
     return report.to_json()
+
+
+def _run_export_rows(args: argparse.Namespace) -> dict[str, object]:
+    """Write one target's evaluation rows as the JSON array Foundry takes as ``inputData``."""
+
+    rows = export_rows(args.target, grounded_dir=args.dataset, assistant_file=args.assistant_file)
+    write_rows(args.out, rows)
+    return {"target": args.target, "rows": len(rows)}
 
 
 async def _run_search_index(args: argparse.Namespace) -> dict[str, object]:
@@ -677,6 +705,8 @@ def main(argv: list[str] | None = None) -> int:
             output = asyncio.run(_run_eval_retrieval(args))
         elif args.command == "release-report":
             output = _run_release_report(args)
+        elif args.command == "export-eval-rows":
+            output = _run_export_rows(args)
         elif args.command == "search-index":
             output = asyncio.run(_run_search_index(args))
         else:

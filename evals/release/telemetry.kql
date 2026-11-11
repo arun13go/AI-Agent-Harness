@@ -1,0 +1,28 @@
+// Operational scorecard for the release report (ADR 0034). It returns one row whose columns are
+// named <scorecard>__<metric>, which `release-report --app-insights` reads directly.
+//
+//   az monitor app-insights query --app <appId> --offset 0.06:00:00 -o json \
+//     --analytics-query "$(cat evals/release/telemetry.kql)" > telemetry.json
+//
+// Bound the window to the evaluation run with --offset or --start-time and --end-time.
+// It reads only counts and timings: the exporter keeps no payloads, and neither does this query.
+// UNVERIFIED: written from the documented OpenTelemetry mapping (server spans become `requests`,
+// other spans `dependencies`) before any traffic reached this resource. Check it against the
+// first live evaluation run and correct it here.
+let tokens_in = toscalar(
+    dependencies
+    | where name == "harness.chat"
+    | summarize sum(todouble(customDimensions["gen_ai.usage.input_tokens"])));
+let tokens_out = toscalar(
+    dependencies
+    | where name == "harness.chat"
+    | summarize sum(todouble(customDimensions["gen_ai.usage.output_tokens"])));
+requests
+| where name == "harness.http"
+| summarize runs = count(), failed = countif(success == false), p95 = percentile(duration, 95)
+| project
+    telemetry__runs = runs,
+    telemetry__error_rate = todouble(failed) / runs,
+    latency__p95_ms = p95,
+    telemetry__avg_input_tokens = todouble(tokens_in) / runs,
+    telemetry__avg_output_tokens = todouble(tokens_out) / runs

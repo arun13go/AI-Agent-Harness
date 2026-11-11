@@ -245,6 +245,42 @@ def retrieval_metrics(path: Path) -> Metrics:
     return {"retrieval": _scorecard("retrieval", present, where)}
 
 
+def _list(value: object, what: str) -> list[object]:
+    if not isinstance(value, list):
+        raise ConfigurationError(f"{what} is malformed")
+    return cast("list[object]", value)
+
+
+def telemetry_metrics(path: Path) -> Metrics:
+    """Read the one-row result of ``evals/release/telemetry.kql``.
+
+    Columns are named ``<scorecard>__<metric>``. A null value means the window held no traffic,
+    which must fail loudly rather than read as a healthy zero.
+    """
+
+    where = f"Telemetry result '{path.name}'"
+    tables = _list(_object(_json(path, "telemetry result"), where).get("tables"), where)
+    if len(tables) != 1:
+        raise ConfigurationError(f"{where} must hold exactly one table")
+    table = _object(tables[0], where)
+    columns, rows = _list(table.get("columns"), where), _list(table.get("rows"), where)
+    if len(rows) != 1:
+        raise ConfigurationError(f"{where} must hold exactly one row")
+    row = _list(rows[0], where)
+    if len(row) != len(columns):
+        raise ConfigurationError(f"{where} has a row that does not match its columns")
+    cards: dict[str, dict[str, object]] = {}
+    for index, column in enumerate(columns):
+        name = _object(column, where).get("name")
+        card, _, metric = name.partition("__") if isinstance(name, str) else ("", "", "")
+        if row[index] is None:
+            raise ConfigurationError(f"{where} column '{name}' is null; there may be no traffic")
+        if metric in cards.setdefault(card, {}):
+            raise ConfigurationError(f"{where} repeats column '{name}'")
+        cards[card][metric] = row[index]
+    return {card: _scorecard(card, values, where) for card, values in cards.items()}
+
+
 def merge_metrics(sources: Sequence[Mapping[str, Mapping[str, float]]]) -> Metrics:
     """Combine sources; two sources reporting one metric is an error, not a silent overwrite."""
 

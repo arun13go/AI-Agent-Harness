@@ -12,10 +12,12 @@
   downloaded with `azure-ai-projects`, already installed. Foundry's evaluation tools stay the
   execution path; the harness owns only the three pieces below.
 - **Dataset: reuse, do not rewrite.** The 33 questions in `evals/grounded-relevance` become the
-  grounded rows (query plus `expected_behavior`: answer, abstain or clarify). A few assistant
-  tool-call and prompt-injection rows are added. One small export step produces Foundry's inline
-  `inputData`. Provider-side generated suites are not used for gating, because their content
-  changes between runs.
+  grounded rows (query plus `expected_behavior`: answer with named sources, or decline without
+  guessing). Six assistant rows (`evals/release/assistant.yaml`: tool call, unavailable service,
+  other-tenant scope, two injections) are added. `agent-harness export-eval-rows` writes either set
+  as the JSON array Foundry takes as `inputData`; each row holds exactly `query` and
+  `expected_behavior`, and row order follows the source file. Provider-side generated suites are
+  not used for gating, because their content changes between runs.
 - **Thresholds in one file, `evals/release/thresholds.yaml`.** One rule per metric and scorecard:
   policy, quality, safety, latency, cost and telemetry. Floors come from the first measured run and
   are labeled as regression floors, as in ADR 0022. False answers and attack success stay at zero
@@ -55,4 +57,10 @@ three of these, and they can be added on top of the same results file.
 - Foundry result fields and the evaluator names must be confirmed against the live service before
   the report parser is written, so the parser is built from a saved real result, not from docs.
 - Telemetry exists for traces and token counts (`gen_ai.usage.*`); cost needs the customer's price
-  inputs; the Application Insights query is untested.
+  inputs. **The Application Insights query is unverified:** `evals/release/telemetry.kql` was
+  written from the documented OpenTelemetry mapping because the resource in the azd environment
+  held no telemetry at all (a read-only query over 365 days returned nothing). The hosted agent
+  may export to a different resource, or not at all. The first live run must confirm the span
+  names, the `customDimensions` keys and which resource receives the data, then correct the query.
+- Assistant rows assume the hosted agent's one tool and one service (`api`); the injection rows
+  test direct injection only, because the tool's output is fixed and cannot carry an indirect one.

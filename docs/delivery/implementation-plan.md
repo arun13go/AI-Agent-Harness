@@ -551,8 +551,11 @@ latency, cost and telemetry. In order:
    (step 4), and inventing numbers would present guesses as evidence. The Foundry result parser
    also waits for a saved real result, so Foundry and telemetry results enter as normalized
    metrics files.
-3. **Dataset export and the Application Insights query**: export the grounded questions and a few
-   assistant tool-call and injection rows to Foundry's `inputData`; check in one telemetry query.
+3. **Dataset export and the Application Insights query** (done locally: `export-eval-rows`,
+   `evals/release/assistant.yaml`, `evals/release/telemetry.kql`, `release-report --app-insights`;
+   33 of 33 mutants caught, no cloud writes). The query is **unverified**: the azd environment's
+   Application Insights resource holds no telemetry, so it was written from the documented mapping
+   and must be checked in step 4.
 4. **First live evaluation**, only after separate approval of the run's cost (judge tokens and any
    hosted-agent compute), the agent to evaluate, and the evaluation objects created in the
    project. Save the real result, finish the parser, set the first floors, and repeat to see noise.

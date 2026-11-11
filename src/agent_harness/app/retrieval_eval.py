@@ -195,6 +195,14 @@ def load_evaluation_corpus(dataset_dir: Path) -> Sequence[RetrievedItem]:
     )
 
 
+def load_evaluation_dataset(dataset_dir: Path) -> EvaluationDataset:
+    """Load and validate a dataset's ``questions.yaml``."""
+
+    return _validate(
+        EvaluationDataset, _load_yaml(dataset_dir / "questions.yaml"), "questions.yaml"
+    )
+
+
 async def evaluate_retrieval(
     *,
     dataset_dir: Path,
@@ -210,9 +218,7 @@ async def evaluate_retrieval(
     the same questions; its index must already hold the evaluation corpus for the same tenant.
     """
 
-    dataset = _validate(
-        EvaluationDataset, _load_yaml(dataset_dir / "questions.yaml"), "questions.yaml"
-    )
+    dataset = load_evaluation_dataset(dataset_dir)
     thresholds: Thresholds | None = None
     thresholds_path = dataset_dir / "thresholds.yaml"
     if apply_thresholds and thresholds_path.is_file():

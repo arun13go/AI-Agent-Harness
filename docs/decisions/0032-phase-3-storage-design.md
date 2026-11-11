@@ -71,6 +71,14 @@ hierarchical partition keys, multi-region and private networking (production ove
 ## Limits and to verify at build
 
 - A tenant partition holds at most 20 GB. Move to a hierarchical key only if a tenant nears it.
-- Confirm the custom `audit` role actions, free-tier limits and unique-key scope against current
-  Cosmos documentation before writing Bicep.
-- Nothing is live: cost, RBAC and behavior under real conflicts are unproven.
+- **Live validation is blocked from the development machine.** The free tier is refused on this
+  subscription ("not supported for Internal subscriptions"), so a serverless account was created.
+  Tenant policy then set `publicNetworkAccess` to `Disabled` and attached a private endpoint, so
+  every data-plane call from the public internet returns 403 with a firewall message. The policy
+  was not weakened. Until the suite runs from inside that network (or with a firewall change the
+  owner approves), the Cosmos REST backend's token scope, headers and the audit role are proven
+  only against a fake HTTP layer and the documented REST contract. `HARNESS_COSMOS_ENDPOINT`
+  enables the `cosmos-live` suite and `test_cosmos_live.py` for that run.
+- The custom `audit` role actions were checked against the data-plane security reference, and the
+  deployed account, containers, unique key, TTL and role match the template.
+- Behavior under real conflicts and the cost of serverless at volume are unmeasured.

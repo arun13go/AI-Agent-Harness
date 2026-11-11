@@ -5,7 +5,36 @@ from __future__ import annotations
 import asyncio
 import copy
 
-from agent_harness.adapters.storage.cosmos_stores import Document, DocumentConflict
+from agent_harness.adapters.storage.cosmos_stores import Document, DocumentBackend, DocumentConflict
+
+
+class NamespacedBackend:
+    """Give each test its own partitions and a short ttl, so a shared live container stays clean."""
+
+    def __init__(self, inner: DocumentBackend, namespace: str, ttl_seconds: int = 3600) -> None:
+        self._inner = inner
+        self._namespace = namespace
+        self._ttl = ttl_seconds
+
+    def _partition(self, partition: str) -> str:
+        return f"{self._namespace}-{partition}"
+
+    def _document(self, partition: str, document: Document) -> Document:
+        return {**document, "tenantScope": self._partition(partition), "ttl": self._ttl}
+
+    async def create(self, partition: str, document: Document) -> None:
+        await self._inner.create(self._partition(partition), self._document(partition, document))
+
+    async def read(self, partition: str, document_id: str) -> Document | None:
+        return await self._inner.read(self._partition(partition), document_id)
+
+    async def replace(self, partition: str, document: Document, *, etag: str) -> None:
+        await self._inner.replace(
+            self._partition(partition), self._document(partition, document), etag=etag
+        )
+
+    async def find(self, partition: str, **equals: str) -> list[Document]:
+        return await self._inner.find(self._partition(partition), **equals)
 
 
 class FakeDocumentBackend:

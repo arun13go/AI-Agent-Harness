@@ -528,6 +528,10 @@ Azure AI Search: contract first, local first, then the cloud. In order:
    helper). **Live validation is next** on the cheapest Cosmos tier with keyless Entra access, in a
    dedicated resource group, only after separate approval of the resource, its cost and the role
    grants. `azure-cosmos` still cannot be downloaded here, so the backend is stdlib REST.
+   **Result:** a serverless account was deployed and matches the template (the free tier is refused
+   on this subscription), but tenant policy disables its public network access, so live calls
+   from this machine fail with a firewall 403. Live validation needs a run from inside the
+   network; see [ADR 0032](../decisions/0032-phase-3-storage-design.md).
 5. Retention settings, then episodic memory (ADR 0029).
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching

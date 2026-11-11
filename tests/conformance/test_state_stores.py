@@ -7,6 +7,8 @@ which has no store yet (ADR 0029), so they are not covered here.
 from __future__ import annotations
 
 import asyncio
+import os
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -68,7 +70,7 @@ from agent_harness.core.types import (
     ToolResult,
 )
 from tests.conformance.fake_cosmos_http import FakeCosmosHttp
-from tests.conformance.fake_documents import FakeDocumentBackend
+from tests.conformance.fake_documents import FakeDocumentBackend, NamespacedBackend
 from tests.conformance.test_azure_search_rest import Credential
 from tests.core.test_governance import make_context, make_event
 
@@ -90,14 +92,41 @@ class Stores:
     idempotency: IdempotencyLedger
 
 
-DOCUMENT_ADAPTERS = ["cosmos-fake", "cosmos-rest-fake"]
+LIVE_ENDPOINT = os.environ.get("HARNESS_COSMOS_ENDPOINT")
+DOCUMENT_ADAPTERS = [
+    "cosmos-fake",
+    "cosmos-rest-fake",
+    pytest.param(
+        "cosmos-live",
+        marks=pytest.mark.skipif(not LIVE_ENDPOINT, reason="HARNESS_COSMOS_ENDPOINT is not set"),
+    ),
+]
+
+
+def live_backend(container: str) -> DocumentBackend:
+    """A live container, each test confined to its own partitions that expire within the hour."""
+
+    from azure.identity import DefaultAzureCredential
+
+    assert LIVE_ENDPOINT
+    return NamespacedBackend(
+        CosmosRestBackend(
+            endpoint=LIVE_ENDPOINT,
+            database="harness",
+            container=container,
+            credential=DefaultAzureCredential(),
+        ),
+        uuid.uuid4().hex[:12],
+    )
 
 
 def document_backend(adapter: str, unique_field: str | None = None) -> DocumentBackend:
-    """A fake document store, directly or behind the real REST backend."""
+    """A fake document store, directly or behind the real REST backend, or live Cosmos DB."""
 
     if adapter == "cosmos-fake":
         return FakeDocumentBackend(unique_field)
+    if adapter == "cosmos-live":
+        return live_backend("audit" if unique_field else "records")
     return CosmosRestBackend(
         endpoint="https://acct-test.documents.azure.com",
         database="harness",

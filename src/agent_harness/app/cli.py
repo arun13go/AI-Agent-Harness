@@ -40,6 +40,17 @@ from agent_harness.app.grounded_executor import (
     ensure_grounded_profile_supported,
 )
 from agent_harness.app.read_executor import ReadToolExecutor
+from agent_harness.app.release_report import (
+    build_report,
+    junit_metrics,
+    load_metrics,
+    load_thresholds,
+    merge_metrics,
+    parse_labels,
+    render_markdown,
+    retrieval_metrics,
+    write_text,
+)
 from agent_harness.app.retrieval_eval import evaluate_retrieval
 from agent_harness.app.search_ingest import Refresh, known_source_versions, sync_corpus
 from agent_harness.app.search_live import build_backend, check_isolation
@@ -198,6 +209,27 @@ def _build_parser() -> argparse.ArgumentParser:
         "--search-index",
         help="Score this Azure AI Search index instead of the profile's (it must hold the "
         "evaluation corpus for the evaluation tenant)",
+    )
+
+    release_parser = subparsers.add_parser(
+        "release-report",
+        help="Combine test, retrieval, quality and operational results into one release verdict",
+    )
+    release_parser.add_argument("--thresholds", type=Path, required=True)
+    release_parser.add_argument("--junit", type=Path, help="pytest junit XML (policy scorecard)")
+    release_parser.add_argument("--retrieval-eval", type=Path, help="eval-retrieval JSON output")
+    release_parser.add_argument(
+        "--metrics",
+        type=Path,
+        action="append",
+        default=[],
+        help='JSON {"scorecard": {"metric": number}} (repeatable)',
+    )
+    release_parser.add_argument("--baseline", type=Path, help="metrics saved by an earlier report")
+    release_parser.add_argument("--json-out", type=Path, help="save the merged metrics")
+    release_parser.add_argument("--markdown", type=Path, help="write the Markdown report")
+    release_parser.add_argument(
+        "--label", action="append", default=[], help="KEY=VALUE run label (repeatable)"
     )
 
     search_parser = subparsers.add_parser(
@@ -473,6 +505,29 @@ def _require_valid_minimum_score(minimum_score: float | None) -> None:
         raise ConfigurationError("Minimum score must be between 0 and 1")
 
 
+def _run_release_report(args: argparse.Namespace) -> dict[str, object]:
+    """Merge result files, apply the release thresholds and write the requested reports."""
+
+    thresholds = load_thresholds(args.thresholds)
+    sources: list[dict[str, dict[str, float]]] = [load_metrics(path) for path in args.metrics]
+    if args.junit is not None:
+        sources.append(junit_metrics(args.junit))
+    if args.retrieval_eval is not None:
+        sources.append(retrieval_metrics(args.retrieval_eval))
+    baseline = load_metrics(args.baseline) if args.baseline is not None else None
+    report = build_report(
+        thresholds,
+        merge_metrics(sources),
+        baseline=baseline,
+        labels=parse_labels(args.label),
+    )
+    if args.json_out is not None:
+        write_text(args.json_out, json.dumps(report.metrics, indent=2, sort_keys=True) + "\n")
+    if args.markdown is not None:
+        write_text(args.markdown, render_markdown(report))
+    return report.to_json()
+
+
 async def _run_search_index(args: argparse.Namespace) -> dict[str, object]:
     """Operate the live search index named on the command line."""
 
@@ -620,6 +675,8 @@ def main(argv: list[str] | None = None) -> int:
             output = asyncio.run(_run_grounded(args))
         elif args.command == "eval-retrieval":
             output = asyncio.run(_run_eval_retrieval(args))
+        elif args.command == "release-report":
+            output = _run_release_report(args)
         elif args.command == "search-index":
             output = asyncio.run(_run_search_index(args))
         else:

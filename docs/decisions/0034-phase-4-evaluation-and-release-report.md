@@ -23,11 +23,17 @@
 - **Two scorecards, linked by run id.** Quality comes from Foundry results. Operational health
   (error rate, p95 latency, tokens per run, estimated cost) comes from Application Insights through
   a checked-in query, saved as JSON. Neither scorecard can pass the other.
-- **One report command, about 150 lines.** `agent-harness release-report` reads the junit XML from
-  the deterministic tests, the retrieval-eval JSON, the Foundry results JSON, the telemetry JSON and
-  the thresholds, then prints one Markdown report and exits non-zero on any failed rule. It runs
-  no model and calls no service, so it is testable offline. Regression compares against a
-  committed baseline file with a tolerance.
+- **One report command.** `agent-harness release-report` (`app/release_report.py`, about 350
+  lines with its validation) reads the junit XML from the deterministic tests, the retrieval-eval
+  JSON, any number of normalized `{scorecard: {metric: number}}` files (Foundry and telemetry
+  results arrive this way) and the thresholds. It returns JSON, writes Markdown with `--markdown`
+  and the merged metrics with `--json-out`, and exits non-zero on any failed rule. It runs no model
+  and calls no service, so it is testable offline. The thresholds must cover every required
+  scorecard, a rule whose metric is missing fails, two sources reporting one metric is an error,
+  and inputs are size-capped (junit also refuses a DOCTYPE or entity). Regression compares against
+  the saved metrics of an earlier run with a relative tolerance (default 5%). Run labels (model,
+  dataset, prompt versions) are listed in the report for traceability; they are restricted to plain
+  characters so they cannot alter the Markdown.
 - **Pull requests stay deterministic.** Tests and `eval-retrieval` run on every change. Foundry
   evaluations run before a release or on a schedule (Phase 5 wires the schedule).
 

@@ -544,8 +544,13 @@ compose Foundry evaluation, reuse the existing question set, and add only a thre
 latency, cost and telemetry. In order:
 
 1. **Design** (done: ADR 0034).
-2. **Thresholds and `release-report`**, test-first over saved fixtures, with no cloud use. The
-   Foundry result parser waits for a saved real result (step 4).
+2. **Thresholds and `release-report`** (done: `release_report.py`, 111 tests, 51 of 51 mutants
+   caught, no cloud use). The mutation run found a real bug, an unanchored metric-name pattern that
+   let a thresholds file put `|` into the report table, now fixed and tested. No
+   `evals/release/thresholds.yaml` is committed yet: its floors must come from measured results
+   (step 4), and inventing numbers would present guesses as evidence. The Foundry result parser
+   also waits for a saved real result, so Foundry and telemetry results enter as normalized
+   metrics files.
 3. **Dataset export and the Application Insights query**: export the grounded questions and a few
    assistant tool-call and injection rows to Foundry's `inputData`; check in one telemetry query.
 4. **First live evaluation**, only after separate approval of the run's cost (judge tokens and any

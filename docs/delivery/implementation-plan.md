@@ -539,7 +539,7 @@ Phase 3 is complete with limits. Steps, in the order delivered:
 ## Current Next Step
 
 Start **Phase 4: Evaluation and operations** ([ADR 0034](../decisions/0034-phase-4-evaluation-and-release-report.md)):
-compose Foundry evaluation, reuse the existing question set, and add only a thresholds file and a
+compose Foundry and MAF evaluation (no evaluator built), reuse the existing question set, and add only a thresholds file and a
 `release-report` command. Exit evidence: one go-live report covers policy, quality, safety,
 latency, cost and telemetry. In order:
 
@@ -553,12 +553,18 @@ latency, cost and telemetry. In order:
    metrics files.
 3. **Dataset export and the Application Insights query** (done locally: `export-eval-rows`,
    `evals/release/assistant.yaml`, `evals/release/telemetry.kql`, `release-report --app-insights`;
-   33 of 33 mutants caught, no cloud writes). The query is **unverified**: the azd environment's
-   Application Insights resource holds no telemetry, so it was written from the documented mapping
-   and must be checked in step 4.
-4. **First live evaluation**, only after separate approval of the run's cost (judge tokens and any
-   hosted-agent compute), the agent to evaluate, and the evaluation objects created in the
-   project. Save the real result, finish the parser, set the first floors, and repeat to see noise.
+   33 of 33 mutants caught, no cloud writes). The query is partly verified: run 1 confirmed
+   `harness.http` requests, `success` and `duration`; the token keys are not yet checked.
+4. **First live evaluation** (run 1 done with approval: assistant v7, 6 rows, `task_adherence` and
+   `tool_call_accuracy`, judge `gpt-5-mini`; one evaluation group and run kept in the project).
+   **Result: all 6 rows errored with HTTP 400, so there are no scores.** The container log showed
+   the host's strict request schema rejecting fields the evaluation service sends (`conversation`,
+   `include` and one more). Decision (ADR 0034 revised): every evaluator comes from the Foundry or
+   MAF SDK, gaps are listed in the ADR, and MAF `evaluate_agent` is primary. Next: a no-cost
+   scripted-model spike of `evaluate_agent` through the governed path behind a feature flag, then
+   MAF `FoundryEvals` for judged quality. The Foundry service path (host change, redeploy) is
+   deferred. Only then save a real result, finish the parser and set floors
+   ([ADR 0034](../decisions/0034-phase-4-evaluation-and-release-report.md)).
 5. **First go-live report** over real results, and the Phase 4 close-out.
 
 Phase 1D is complete in Azure Dev: v7 serves 100%, both infrastructure entry points have matching

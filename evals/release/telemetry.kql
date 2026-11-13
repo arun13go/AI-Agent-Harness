@@ -1,14 +1,16 @@
 // Operational scorecard for the release report (ADR 0034). It returns one row whose columns are
 // named <scorecard>__<metric>, which `release-report --app-insights` reads directly.
 //
-//   az monitor app-insights query --app <appId> --offset 0.06:00:00 -o json \
+//   az monitor app-insights query --app <appId> --offset 6h -o json \
 //     --analytics-query "$(cat evals/release/telemetry.kql)" > telemetry.json
 //
-// Bound the window to the evaluation run with --offset or --start-time and --end-time.
+// ALWAYS pass --offset (for example 6h or 2d) or --start-time and --end-time. The CLI applies a
+// one-hour window by default, so a longer filter inside a query is silently cut to one hour and an
+// old run reads as "no data". The offset format is 6h or 2d, not hh:mm:ss.
 // It reads only counts and timings: the exporter keeps no payloads, and neither does this query.
-// UNVERIFIED: written from the documented OpenTelemetry mapping (server spans become `requests`,
-// other spans `dependencies`) before any traffic reached this resource. Check it against the
-// first live evaluation run and correct it here.
+// Checked against live data: `harness.http` requests exist with `success` and a millisecond
+// `duration`. NOT yet checked: the `harness.chat` dependencies and their token keys, because the
+// first evaluation run was rejected before any model call (see ADR 0034).
 let tokens_in = toscalar(
     dependencies
     | where name == "harness.chat"

@@ -563,7 +563,11 @@ latency, cost and telemetry. In order:
    MAF SDK, gaps are listed in the ADR, and MAF `evaluate_agent` is primary. Next: a no-cost
    scripted-model spike of `evaluate_agent` through the governed path behind a feature flag, then
    MAF `FoundryEvals` for judged quality. The Foundry service path (host change, redeploy) is
-   deferred. Only then save a real result, finish the parser and set floors
+   deferred. **Step 4a done locally:** `adapters/maf/evaluation.py` (`GovernedEvalAgent`, about 150
+   lines) lets `evaluate_agent` + `LocalEvaluator` score runs that go through `MafAgentExecutor`
+   (10 tests, 14 of 15 mutants caught, the survivor equivalent; no cloud use). Next: MAF
+   `FoundryEvals` for judged quality (needs approval and judge tokens), then save a real result,
+   finish the parser and set floors
    ([ADR 0034](../decisions/0034-phase-4-evaluation-and-release-report.md)).
 5. **First go-live report** over real results, and the Phase 4 close-out.
 

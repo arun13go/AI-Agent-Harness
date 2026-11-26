@@ -23,13 +23,16 @@
   | Release verdict | Harness `release-report` | Aggregates results; not an evaluator |
 
   MAF evaluation is experimental, so it sits behind a feature flag with a fallback (AGENTS.md).
-  A hook that runs `evaluate_agent` through the governed path (approvals, audit) is untested; a
-  scripted-model spike comes first.
+  A `GovernedEvalAgent` (`adapters/maf/evaluation.py`) runs every query through the governed
+  executor, so approvals, identity scope and audit apply. It reports tools from the audit trail,
+  which holds names but no arguments, so argument-matching evaluators cannot use it. Nothing on the
+  serving path imports it, which keeps the experimental API opt-in.
 - **Dataset: reuse, do not rewrite.** The 33 questions in `evals/grounded-relevance` become the
   grounded rows (query plus `expected_behavior`: answer with named sources, or decline without
   guessing). Six assistant rows (`evals/release/assistant.yaml`: tool call, unavailable service,
   other-tenant scope, two injections) are added. `agent-harness export-eval-rows` writes either set
-    as the JSON array the Foundry service path takes as `inputData` (secondary path only); each row holds exactly `query` and
+  as the JSON array the Foundry service path takes as `inputData` (secondary path only); each row
+  holds exactly `query` and
   `expected_behavior`, and row order follows the source file. Provider-side generated suites are
   not used for gating, because their content changes between runs.
 - **Thresholds in one file, `evals/release/thresholds.yaml`.** One rule per metric and scorecard:

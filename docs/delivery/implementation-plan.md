@@ -565,9 +565,20 @@ latency, cost and telemetry. In order:
    MAF `FoundryEvals` for judged quality. The Foundry service path (host change, redeploy) is
    deferred. **Step 4a done locally:** `adapters/maf/evaluation.py` (`GovernedEvalAgent`, about 150
    lines) lets `evaluate_agent` + `LocalEvaluator` score runs that go through `MafAgentExecutor`
-   (10 tests, 14 of 15 mutants caught, the survivor equivalent; no cloud use). Next: MAF
-   `FoundryEvals` for judged quality (needs approval and judge tokens), then save a real result,
-   finish the parser and set floors
+   (10 tests, 14 of 15 mutants caught, the survivor equivalent; no cloud use).
+   **Step 4b partial:** judging two saved answers completed; relevance passed, but task adherence
+   failed with missing tool evidence. This is not a release pass and sets no floors.
+   **Step 4c partial:** opt-in capture passed offline tests; one paid local-agent row then passed
+   both judges with real tool evidence, but without system instructions. An offline-verified update
+   sent instructions in a second one-row smoke: both judges passed, with instructions labeled
+   `SYSTEM_PROMPT` in the judge query. The six-row local run judged four answers as passing, verified
+   the unavailable-service rejection, and left one provider-blocked injection unverified; overall
+   it failed. Its scope answer suggested checking another tenant's services without exposing data,
+   so the judge pass is not proof of isolation. The runtime now instructs the model not to offer
+   access to another tenant; this guidance does not replace code-enforced scope. Offline tests
+   passed, and one local-agent scope check stated the limitation without a tool call. **Next:**
+   obtain sufficient approved evidence of scope, safety and instruction-following; finish the result
+   parser and set measured floors
    ([ADR 0034](../decisions/0034-phase-4-evaluation-and-release-report.md)).
 5. **First go-live report** over real results, and the Phase 4 close-out.
 

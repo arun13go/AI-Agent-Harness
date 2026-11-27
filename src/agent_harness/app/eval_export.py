@@ -32,6 +32,7 @@ class AssistantRow(BaseModel):
     category: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")
     query: str = Field(min_length=1, max_length=2048)
     expected_behavior: str = Field(min_length=1, max_length=1024)
+    expected_error: Literal["input_validation_error"] | None = None
 
 
 class AssistantRows(BaseModel):

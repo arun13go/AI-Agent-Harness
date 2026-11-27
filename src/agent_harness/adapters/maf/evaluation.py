@@ -1,9 +1,11 @@
 """Let MAF evaluators score runs that go through the governed executor.
 
 MAF evaluation is experimental, so nothing on the serving path imports this module; evaluation is
-opt-in by construction. The agent below runs every query through ``MafAgentExecutor`` (approvals,
-identity scope, audit), then reports the tools the audit trail shows were started. Tool arguments
-are not in the audit trail, so evaluators that compare arguments cannot use this agent.
+opt-in by construction. Every query uses ``MafAgentExecutor`` (approvals, identity scope, audit).
+By default only answer text is returned. Explicit ``capture_transcript=True`` retains the real
+SDK response, including tool arguments and results, for an approved evaluation. It does not add
+payloads to audit or telemetry. ``to_eval_item`` includes the same trusted instructions passed to
+the executor; evaluators may send those instructions to their configured provider.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from agent_framework import (
     AgentSession,
     ChatOptions,
     Content,
+    EvalItem,
     FunctionTool,
     ResponseStream,
     ServiceSessionId,
@@ -36,30 +39,7 @@ from agent_harness.core.types import (
     Message,
     ModelRequest,
     RequestContext,
-    RunEvent,
 )
-
-
-class _ToolRecorder:
-    """Forward events, then remember which tools each run started."""
-
-    def __init__(self, inner: AuditSink) -> None:
-        self._inner = inner
-        self.started: dict[str, list[str]] = {}
-
-    async def append_next(self, event: RunEvent) -> None:
-        await self._inner.append_next(event)
-        self._note(event)
-
-    async def append(self, event: RunEvent) -> None:
-        await self._inner.append(event)
-        self._note(event)
-
-    def _note(self, event: RunEvent) -> None:
-        if event.event_type == "tool.started":
-            self.started.setdefault(event.context.run_id, []).append(
-                str(event.attributes["toolName"])
-            )
 
 
 class GovernedEvalAgent:
@@ -75,24 +55,24 @@ class GovernedEvalAgent:
         identity: IdentityScope,
         instructions: Sequence[str] = (),
         max_output_tokens: int = 1024,
+        capture_transcript: bool = False,
     ) -> None:
         self.id = "agent-harness-eval"
         self.name: str | None = "agent-harness"
         self.description: str | None = None
-        self.default_options: dict[str, Any] = {
-            "tools": [
-                FunctionTool(
-                    name=tool.definition.name,
-                    description=tool.definition.description,
-                    input_model=tool.definition.input_schema,
-                )
-                for _, tool in tools
-            ]
-        }
-        self._recorder = _ToolRecorder(audit_sink)
+        self._eval_tools = [
+            FunctionTool(
+                name=tool.definition.name,
+                description=tool.definition.description,
+                input_model=tool.definition.input_schema,
+            )
+            for _, tool in tools
+        ]
+        self.default_options: dict[str, Any] = {"tools": self._eval_tools}
         self._executor = MafAgentExecutor(
-            config=config, client=client, tools=tools, audit_sink=self._recorder
+            config=config, client=client, tools=tools, audit_sink=audit_sink
         )
+        self._capture_transcript = capture_transcript
         self._tool_definitions = tuple(tool.definition for _, tool in tools)
         self._timeout = timedelta(seconds=config.runtime.timeout_seconds)
         self._identity = identity
@@ -151,25 +131,34 @@ class GovernedEvalAgent:
             tools=self._tool_definitions,
             max_output_tokens=self._max_output_tokens,
         )
-        try:
-            response = await self._executor.run(
-                authenticated_identity=self._identity, request=request
-            )
-        finally:
-            started = self._recorder.started.pop(context.run_id, [])
-        calls = [
-            MafMessage(
-                "assistant",
-                [
-                    Content.from_function_call(
-                        call_id=f"{context.run_id}-{i}", name=name, arguments={}
-                    )
-                ],
-            )
-            for i, name in enumerate(started)
-        ]
+        captured: list[AgentResponse[None]] = []
+        response = await self._executor.run(
+            authenticated_identity=self._identity,
+            request=request,
+            on_response=captured.append if self._capture_transcript else None,
+        )
+        if self._capture_transcript:
+            if len(captured) != 1:
+                raise RuntimeError("Evaluation did not receive exactly one completed SDK response")
+            return captured[0]
         text = response.message.content if response.message else ""
-        return AgentResponse(messages=[*calls, MafMessage("assistant", [text])])
+        return AgentResponse(messages=[MafMessage("assistant", [text])])
+
+    def to_eval_item(
+        self, *, query: str, response: AgentResponse[Any], expected_output: str | None = None
+    ) -> EvalItem:
+        """Build a judge item with trusted instructions and an opt-in captured response."""
+        if not self._capture_transcript:
+            raise ValueError("Evaluation items require transcript capture")
+        return EvalItem(
+            conversation=[
+                MafMessage("system", [self._executor.compose_instructions(self._instructions)]),
+                MafMessage("user", [query]),
+                *response.messages,
+            ],
+            tools=self._eval_tools,
+            expected_output=expected_output,
+        )
 
     def create_session(self, *, session_id: str | None = None) -> AgentSession:
         return AgentSession(session_id=session_id)

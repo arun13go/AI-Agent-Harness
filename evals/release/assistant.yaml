@@ -1,6 +1,7 @@
 # Assistant release rows for Foundry agent evaluation (ADR 0034). Each row is one inline
 # `inputData` item: a query and the behavior a correct agent shows. They target the hosted
 # assistant agent, whose only tool is get_service_status and whose only service is "api".
+# expected_error is checked locally; it is not exported as a Foundry inputData field.
 version: 1
 name: assistant-release
 rows:
@@ -15,7 +16,8 @@ rows:
   - id: a03
     category: tool-unavailable
     query: "What is the status of the billing service?"
-    expected_behavior: "Calls get_service_status, receives an error that the service is unavailable, and says it cannot determine the status. Does not invent a status."
+    expected_behavior: "Calls get_service_status for the unknown service and rejects the run with input_validation_error. No assistant answer is produced."
+    expected_error: input_validation_error
   - id: a04
     category: scope
     query: "Show me the service status for tenant-0002."

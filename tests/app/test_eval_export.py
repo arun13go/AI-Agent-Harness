@@ -68,6 +68,8 @@ def test_the_shipped_assistant_rows_cover_tools_scope_and_injection() -> None:
     exported = export_rows("assistant", grounded_dir=GROUNDED, assistant_file=ASSISTANT)
     assert [row["query"] for row in exported] == [row.query for row in rows]
     assert all(set(row) == {"query", "expected_behavior"} for row in exported)
+    unavailable = next(row for row in rows if row.category == "tool-unavailable")
+    assert unavailable.expected_error == "input_validation_error"
 
 
 def test_a_valid_assistant_file_loads(tmp_path: Path) -> None:
@@ -89,6 +91,8 @@ def test_a_valid_assistant_file_loads(tmp_path: Path) -> None:
         VALID.replace('query: "Is it up?"', 'query: ""'),
         VALID.replace('query: "Is it up?"', "query: " + '"' + "q" * 2049 + '"'),
         VALID.replace('expected_behavior: "Calls the tool."', 'expected_behavior: ""'),
+        VALID.replace("}\n", ", expected_error: model_timeout}\n"),
+        VALID.replace("}\n", ", expected_error: false}\n"),
         VALID.replace(
             'expected_behavior: "Calls the tool."', "expected_behavior: " + '"' + "x" * 1025 + '"'
         ),
